@@ -16,19 +16,24 @@ public interface UserConstant {
     //  region 权限
 
     /**
-     * 默认角色
+     * 学生
      */
-    String DEFAULT_ROLE = "user";
+    String STUDENT_ROLE = "student";
 
     /**
-     * 管理员角色
+     * 教师管理员
      */
-    String ADMIN_ROLE = "admin";
+    String TEACHER_ROLE = "teacher";
 
     /**
-     * 被封号
+     * 游客
      */
-    String BAN_ROLE = "ban";
+    String TOURIST = "tourist";
+
+    /**
+     * 账号被封禁
+     */
+    String BAN = "ban";
 
     // endregion
 }

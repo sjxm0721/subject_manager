@@ -3,6 +3,8 @@ package com.sjxm.springbootinit.model.enums;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
+
+import cn.hutool.core.util.StrUtil;
 import org.apache.commons.lang3.ObjectUtils;
 
 /**
@@ -13,15 +15,17 @@ import org.apache.commons.lang3.ObjectUtils;
  */
 public enum UserRoleEnum {
 
-    USER("用户", "user"),
-    ADMIN("管理员", "admin"),
-    BAN("被封号", "ban");
+    STUDENT("student", 1),
+    TEACHER("teacher", 2),
+    TOURIST("tourist", 3),
+
+    BAN("ban",4);
 
     private final String text;
 
-    private final String value;
+    private final Integer value;
 
-    UserRoleEnum(String text, String value) {
+    UserRoleEnum(String text, Integer value) {
         this.text = text;
         this.value = value;
     }
@@ -31,7 +35,7 @@ public enum UserRoleEnum {
      *
      * @return
      */
-    public static List<String> getValues() {
+    public static List<Integer> getValues() {
         return Arrays.stream(values()).map(item -> item.value).collect(Collectors.toList());
     }
 
@@ -41,7 +45,19 @@ public enum UserRoleEnum {
      * @param value
      * @return
      */
-    public static UserRoleEnum getEnumByValue(String value) {
+    public static UserRoleEnum getEnumByText(String text) {
+        if (StrUtil.isEmpty(text)) {
+            return null;
+        }
+        for (UserRoleEnum anEnum : UserRoleEnum.values()) {
+            if (anEnum.text.equals(text)) {
+                return anEnum;
+            }
+        }
+        return null;
+    }
+
+    public static UserRoleEnum getEnumByValue(Integer value) {
         if (ObjectUtils.isEmpty(value)) {
             return null;
         }
@@ -53,7 +69,7 @@ public enum UserRoleEnum {
         return null;
     }
 
-    public String getValue() {
+    public Integer getValue() {
         return value;
     }
 

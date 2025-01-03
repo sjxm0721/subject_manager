@@ -1,5 +1,9 @@
 package com.sjxm.springbootinit.controller;
 
+import cn.hutool.core.util.ObjectUtil;
+import cn.hutool.core.util.StrUtil;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sjxm.springbootinit.annotation.AuthCheck;
 import com.sjxm.springbootinit.common.BaseResponse;
@@ -9,26 +13,26 @@ import com.sjxm.springbootinit.common.ResultUtils;
 import com.sjxm.springbootinit.constant.UserConstant;
 import com.sjxm.springbootinit.exception.BusinessException;
 import com.sjxm.springbootinit.exception.ThrowUtils;
-import com.sjxm.springbootinit.model.dto.user.UserAddRequest;
-import com.sjxm.springbootinit.model.dto.user.UserLoginRequest;
-import com.sjxm.springbootinit.model.dto.user.UserQueryRequest;
-import com.sjxm.springbootinit.model.dto.user.UserRegisterRequest;
-import com.sjxm.springbootinit.model.dto.user.UserUpdateMyRequest;
-import com.sjxm.springbootinit.model.dto.user.UserUpdateRequest;
+import com.sjxm.springbootinit.model.dto.user.*;
 import com.sjxm.springbootinit.model.entity.User;
 import com.sjxm.springbootinit.model.vo.LoginUserVO;
 import com.sjxm.springbootinit.model.vo.UserVO;
+import com.sjxm.springbootinit.properties.JwtProperties;
 import com.sjxm.springbootinit.service.UserService;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import com.sjxm.springbootinit.utils.JwtUtil;
 import lombok.extern.slf4j.Slf4j;
 import me.chanjar.weixin.common.bean.WxOAuth2UserInfo;
 import me.chanjar.weixin.common.bean.oauth2.WxOAuth2AccessToken;
 import me.chanjar.weixin.mp.api.WxMpService;
+import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.util.DigestUtils;
@@ -36,7 +40,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import static com.sjxm.springbootinit.service.impl.UserServiceImpl.SALT;
@@ -56,7 +59,7 @@ public class UserController {
     private UserService userService;
 
     @Resource
-    private WxOpenConfig wxOpenConfig;
+    private JwtProperties jwtProperties;
 
     // region 登录相关
 
@@ -99,46 +102,51 @@ public class UserController {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
         LoginUserVO loginUserVO = userService.userLogin(userAccount, userPassword, request);
+
+        //登录成功，生成JWT令牌
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("id",loginUserVO.getId());
+        String token = JwtUtil.createJWT(
+                jwtProperties.getAdminSecretKey(),//密钥
+                jwtProperties.getAdminTtl(),//有效时间
+                claims//用户身份
+        );
+        loginUserVO.setToken(token);
         return ResultUtils.success(loginUserVO);
+    }
+
+    @GetMapping("/current-user")
+    public BaseResponse<LoginUserVO> getCurrentUser(HttpServletRequest request){
+        User loginUser = userService.getLoginUser(request);
+        if(ObjectUtil.isNull(loginUser)){
+            throw new BusinessException(ErrorCode.NOT_LOGIN_ERROR);
+        }
+        return ResultUtils.success(userService.getLoginUserVO(loginUser));
     }
 
     /**
      * 用户登录（微信开放平台）
      */
-    @GetMapping("/login/wx_open")
-    public BaseResponse<LoginUserVO> userLoginByWxOpen(HttpServletRequest request, HttpServletResponse response,
-            @RequestParam("code") String code) {
-        WxOAuth2AccessToken accessToken;
-        try {
-            WxMpService wxService = wxOpenConfig.getWxMpService();
-            accessToken = wxService.getOAuth2Service().getAccessToken(code);
-            WxOAuth2UserInfo userInfo = wxService.getOAuth2Service().getUserInfo(accessToken, code);
-            String unionId = userInfo.getUnionId();
-            String mpOpenId = userInfo.getOpenid();
-            if (StringUtils.isAnyBlank(unionId, mpOpenId)) {
-                throw new BusinessException(ErrorCode.SYSTEM_ERROR, "登录失败，系统错误");
-            }
-            return ResultUtils.success(userService.userLoginByMpOpen(userInfo, request));
-        } catch (Exception e) {
-            log.error("userLoginByWxOpen error", e);
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "登录失败，系统错误");
-        }
-    }
+//    @GetMapping("/login/wx_open")
+//    public BaseResponse<LoginUserVO> userLoginByWxOpen(HttpServletRequest request, HttpServletResponse response,
+//            @RequestParam("code") String code) {
+//        WxOAuth2AccessToken accessToken;
+//        try {
+//            WxMpService wxService = wxOpenConfig.getWxMpService();
+//            accessToken = wxService.getOAuth2Service().getAccessToken(code);
+//            WxOAuth2UserInfo userInfo = wxService.getOAuth2Service().getUserInfo(accessToken, code);
+//            String unionId = userInfo.getUnionId();
+//            String mpOpenId = userInfo.getOpenid();
+//            if (StringUtils.isAnyBlank(unionId, mpOpenId)) {
+//                throw new BusinessException(ErrorCode.SYSTEM_ERROR, "登录失败，系统错误");
+//            }
+//            return ResultUtils.success(userService.userLoginByMpOpen(userInfo, request));
+//        } catch (Exception e) {
+//            log.error("userLoginByWxOpen error", e);
+//            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "登录失败，系统错误");
+//        }
+//    }
 
-    /**
-     * 用户注销
-     *
-     * @param request
-     * @return
-     */
-    @PostMapping("/logout")
-    public BaseResponse<Boolean> userLogout(HttpServletRequest request) {
-        if (request == null) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR);
-        }
-        boolean result = userService.userLogout(request);
-        return ResultUtils.success(result);
-    }
 
     /**
      * 获取当前登录用户
@@ -164,7 +172,7 @@ public class UserController {
      * @return
      */
     @PostMapping("/add")
-    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    @AuthCheck(mustRole = UserConstant.TEACHER_ROLE)
     public BaseResponse<Long> addUser(@RequestBody UserAddRequest userAddRequest, HttpServletRequest request) {
         if (userAddRequest == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
@@ -188,7 +196,7 @@ public class UserController {
      * @return
      */
     @PostMapping("/delete")
-    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    @AuthCheck(mustRole = UserConstant.TEACHER_ROLE)
     public BaseResponse<Boolean> deleteUser(@RequestBody DeleteRequest deleteRequest, HttpServletRequest request) {
         if (deleteRequest == null || deleteRequest.getId() <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
@@ -205,7 +213,7 @@ public class UserController {
      * @return
      */
     @PostMapping("/update")
-    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    @AuthCheck(mustRole = UserConstant.TEACHER_ROLE)
     public BaseResponse<Boolean> updateUser(@RequestBody UserUpdateRequest userUpdateRequest,
             HttpServletRequest request) {
         if (userUpdateRequest == null || userUpdateRequest.getId() == null) {
@@ -226,7 +234,7 @@ public class UserController {
      * @return
      */
     @GetMapping("/get")
-    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    @AuthCheck(mustRole = UserConstant.TEACHER_ROLE)
     public BaseResponse<User> getUserById(long id, HttpServletRequest request) {
         if (id <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
@@ -258,7 +266,7 @@ public class UserController {
      * @return
      */
     @PostMapping("/list/page")
-    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    @AuthCheck(mustRole = UserConstant.TEACHER_ROLE)
     public BaseResponse<Page<User>> listUserByPage(@RequestBody UserQueryRequest userQueryRequest,
             HttpServletRequest request) {
         long current = userQueryRequest.getCurrent();
@@ -314,6 +322,28 @@ public class UserController {
         user.setId(loginUser.getId());
         boolean result = userService.updateById(user);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        return ResultUtils.success(true);
+    }
+
+    @PostMapping("/update/pwd")
+    public BaseResponse<Boolean> updatePwd(@RequestBody UserPwdChangeRequest userPwdChangeRequest,HttpServletRequest request){
+        User loginUser = userService.getLoginUser(request);
+        if(ObjectUtil.isNull(loginUser)){
+            throw new BusinessException(ErrorCode.NOT_LOGIN_ERROR);
+        }
+        String newPwd = userPwdChangeRequest.getNewPwd();
+        String userPassword = loginUser.getUserPassword();
+        if(StrUtil.isBlankIfStr(newPwd)){
+            throw new BusinessException(ErrorCode.OPERATION_ERROR,"密码不能为空");
+        }
+        else if(newPwd.equals(userPassword)){
+            throw new BusinessException(ErrorCode.OPERATION_ERROR,"新密码不能与旧密码相同");
+        }
+        else{
+            LambdaUpdateWrapper<User> lambdaUpdateWrapper = new LambdaUpdateWrapper<>();
+            lambdaUpdateWrapper.set(User::getUserPassword,newPwd).eq(User::getId,loginUser.getId());
+            userService.update(lambdaUpdateWrapper);
+        }
         return ResultUtils.success(true);
     }
 }

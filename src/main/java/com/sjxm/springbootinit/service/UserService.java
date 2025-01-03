@@ -69,7 +69,7 @@ public interface UserService extends IService<User> {
      * @param request
      * @return
      */
-    boolean isAdmin(HttpServletRequest request);
+    boolean isTeacher(HttpServletRequest request);
 
     /**
      * 是否为管理员
@@ -77,15 +77,8 @@ public interface UserService extends IService<User> {
      * @param user
      * @return
      */
-    boolean isAdmin(User user);
+    boolean isTeacher(User user);
 
-    /**
-     * 用户注销
-     *
-     * @param request
-     * @return
-     */
-    boolean userLogout(HttpServletRequest request);
 
     /**
      * 获取脱敏的已登录用户信息
@@ -118,4 +111,5 @@ public interface UserService extends IService<User> {
      */
     QueryWrapper<User> getQueryWrapper(UserQueryRequest userQueryRequest);
 
+    void addStudent(User user);
 }

@@ -61,9 +61,9 @@ public class User implements Serializable {
     private String userProfile;
 
     /**
-     * 用户角色：user/admin/ban
+     * 用户角色：1-student  2-teacher  3-tourist
      */
-    private String userRole;
+    private Integer userRole;
 
     /**
      * 创建时间
@@ -76,10 +76,33 @@ public class User implements Serializable {
     private Date updateTime;
 
     /**
+     * 班级名称
+     */
+    private String className;
+
+
+    /**
+     * 电话
+     */
+    private String phone;
+
+
+
+    /**
      * 是否删除
      */
     @TableLogic
     private Integer isDelete;
+
+    /**
+     * 权限-查看
+     */
+    private Integer checkAble;
+
+    /**
+     * 权限-上传
+     */
+    private Integer uploadAble;
 
     @TableField(exist = false)
     private static final long serialVersionUID = 1L;

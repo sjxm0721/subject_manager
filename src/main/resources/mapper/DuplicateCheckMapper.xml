@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sjxm.springbootinit.mapper.DuplicateCheckMapper">
+
+    <resultMap id="BaseResultMap" type="com.sjxm.springbootinit.model.entity.DuplicateCheck">
+            <id property="id" column="id" jdbcType="BIGINT"/>
+            <result property="sourceId" column="source_id" jdbcType="BIGINT"/>
+            <result property="targetId" column="target_id" jdbcType="BIGINT"/>
+            <result property="similarity" column="similarity" jdbcType="DECIMAL"/>
+            <result property="briefValue" column="brief_value" jdbcType="DECIMAL"/>
+            <result property="backgroundValue" column="background_value" jdbcType="DECIMAL"/>
+            <result property="systemDesignValue" column="system_design_value" jdbcType="DECIMAL"/>
+            <result property="wordValue" column="word_value" jdbcType="DECIMAL"/>
+            <result property="pdfValue" column="pdf_value" jdbcType="DECIMAL"/>
+            <result property="sourceValue" column="source_value" jdbcType="DECIMAL"/>
+            <result property="createTime" column="create_time" jdbcType="TIMESTAMP"/>
+            <result property="updateTime" column="update_time" jdbcType="TIMESTAMP"/>
+            <result property="isDelete" column="is_delete" jdbcType="TINYINT"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,source_id,target_id,
+        similarity,brief_value,background_value,
+        system_design_value,word_value,pdf_value,
+        source_value,create_time,update_time,
+        is_delete
+    </sql>
+</mapper>

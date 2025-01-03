@@ -46,18 +46,22 @@ public class AuthInterceptor {
         User loginUser = userService.getLoginUser(request);
         // 必须有该权限才通过
         if (StringUtils.isNotBlank(mustRole)) {
-            UserRoleEnum mustUserRoleEnum = UserRoleEnum.getEnumByValue(mustRole);
+            UserRoleEnum mustUserRoleEnum = UserRoleEnum.getEnumByText(mustRole);
             if (mustUserRoleEnum == null) {
                 throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
             }
-            String userRole = loginUser.getUserRole();
+            Integer userRole = loginUser.getUserRole();
+            UserRoleEnum userRoleEnum = UserRoleEnum.getEnumByValue(userRole);
+            if(userRoleEnum==null){
+                throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
+            }
             // 如果被封号，直接拒绝
-            if (UserRoleEnum.BAN.equals(mustUserRoleEnum)) {
+            if(UserRoleEnum.BAN.equals(userRoleEnum)){
                 throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
             }
             // 必须有管理员权限
-            if (UserRoleEnum.ADMIN.equals(mustUserRoleEnum)) {
-                if (!mustRole.equals(userRole)) {
+            if (UserRoleEnum.TEACHER.equals(mustUserRoleEnum)||UserRoleEnum.STUDENT.equals(mustUserRoleEnum)) {
+                if (!mustRole.equals(userRoleEnum.getText())) {
                     throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
                 }
             }

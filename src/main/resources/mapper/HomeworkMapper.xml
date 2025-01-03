@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.sjxm.springbootinit.mapper.HomeworkMapper">
+
+    <resultMap id="BaseResultMap" type="com.sjxm.springbootinit.model.entity.Homework">
+            <id property="id" column="id" jdbcType="BIGINT"/>
+            <result property="subjectId" column="subject_id" jdbcType="BIGINT"/>
+            <result property="groupNum" column="group_num" jdbcType="INTEGER"/>
+            <result property="title" column="title" jdbcType="VARCHAR"/>
+            <result property="commend" column="commend" jdbcType="TINYINT"/>
+            <result property="brief" column="brief" jdbcType="VARCHAR"/>
+            <result property="hardwareTech" column="hardware_tech" jdbcType="VARCHAR"/>
+            <result property="softwareTech" column="software_tech" jdbcType="VARCHAR"/>
+            <result property="background" column="background" jdbcType="VARCHAR"/>
+            <result property="systemDesign" column="system_design" jdbcType="VARCHAR"/>
+            <result property="attachmentWord" column="attachment_word" jdbcType="VARCHAR"/>
+            <result property="attachmentPdf" column="attachment_pdf" jdbcType="VARCHAR"/>
+            <result property="attachmentSource" column="attachment_source" jdbcType="VARCHAR"/>
+            <result property="attachmentMp4" column="attachment_mp4" jdbcType="VARCHAR"/>
+            <result property="createTime" column="create_time" jdbcType="TIMESTAMP"/>
+            <result property="updateTime" column="update_time" jdbcType="TIMESTAMP"/>
+            <result property="isDelete" column="is_delete" jdbcType="TINYINT"/>
+            <result property="subjectType" column="subject_type" jdbcType="TINYINT"/>
+            <result property="submitYear" column="submit_year" jdbcType="INTEGER"/>
+            <result property="post" column="post" jdbcType="VARCHAR"/>
+            <result property="isCorrect" column="is_correct" jdbcType="TINYINT"/>
+            <result property="checkStatus" column="check_status" jdbcType="TINYINT"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,subject_id,group_num,
+        title,commend,brief,
+        hardware_tech,software_tech,background,
+        system_design,attachment_word,attachment_pdf,
+        attachment_source,attachment_mp4,create_time,
+        update_time,is_delete,type
+    </sql>
+    <select id="selectHomeworkGradePage" resultType="com.sjxm.springbootinit.model.vo.HomeworkGradeVO">
+        SELECT
+            h.id,
+            h.subject_id as subjectId,
+            s.title as subjectName,
+            ss.group_num as groupNum,
+            h.title,
+            h.is_correct as isCorrect
+        FROM
+            subject_student ss
+            INNER JOIN homework h ON ss.subject_id = h.subject_id
+                AND ss.group_num = h.group_num
+            LEFT JOIN subject s ON h.subject_id = s.id
+        WHERE
+            ss.student_id = #{studentId}
+            AND ss.is_delete = 0
+            AND h.is_delete = 0
+            <if test="subjectId!=null">
+                AND h.subject_id = #{subjectId}
+            </if>
+            <if test="isCorrect!=null">
+                AND h.is_correct = #{isCorrect}
+            </if>
+        ORDER BY
+            h.update_time DESC
+    </select>
+    <select id="export" resultType="com.sjxm.springbootinit.model.vo.HomeworkExportVO">
+        SELECT
+        s.grade AS grade,
+        s.title AS subjectName,
+        h.group_num AS groupNum,
+        GROUP_CONCAT(u.user_name SEPARATOR '，') AS names,
+        h.title AS title,
+        h.brief AS brief,
+        h.hardware_tech AS hardwareTech,
+        h.software_tech AS softwareTech
+        FROM homework h
+        INNER JOIN subject s ON h.subject_id = s.id
+        AND s.is_delete = 0
+        INNER JOIN subject_student ss ON h.subject_id = ss.subject_id
+        AND h.group_num = ss.group_num
+        AND ss.is_delete = 0
+        INNER JOIN user u ON ss.student_id = u.id
+        AND u.is_delete = 0
+        AND u.user_role = 1  -- 确保是学生
+        WHERE h.is_delete = 0
+        <if test="grade != null and grade != ''">
+            AND s.grade LIKE CONCAT('%', #{grade}, '%')
+        </if>
+        <if test="title != null and title != ''">
+            AND s.title LIKE CONCAT('%', #{title}, '%')
+        </if>
+        <if test="homeworkTitle != null and homeworkTitle != ''">
+            AND h.title LIKE CONCAT('%', #{homeworkTitle}, '%')
+        </if>
+        GROUP BY
+        s.grade,
+        s.title,
+        h.group_num,
+        h.title,
+        h.brief,
+        h.hardware_tech,
+        h.software_tech,
+        h.id  -- 添加h.id确保分组正确
+        ORDER BY
+        s.grade,
+        s.title,
+        h.group_num
+    </select>
+</mapper>
