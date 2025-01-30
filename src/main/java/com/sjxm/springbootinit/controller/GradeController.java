@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.Resource;
+import javax.validation.Valid;
 
 /**
  * @Author: 四季夏目
@@ -29,7 +30,7 @@ public class GradeController {
 
     @PostMapping("/submit")
     @AuthCheck(mustRole = UserConstant.TEACHER_ROLE)
-    public BaseResponse<Boolean> submitGrades(@RequestBody GradeSubmitRequest gradeSubmitRequest){
+    public BaseResponse<Boolean> submitGrades(@RequestBody @Valid GradeSubmitRequest gradeSubmitRequest){
         if(gradeSubmitRequest==null){
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }

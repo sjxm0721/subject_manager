@@ -3,6 +3,7 @@ package com.sjxm.springbootinit.model.dto.student;
 import com.sjxm.springbootinit.model.vo.StudentVO;
 import lombok.Data;
 
+import javax.validation.constraints.NotBlank;
 import java.io.Serializable;
 import java.util.List;
 
@@ -20,12 +21,14 @@ public class StudentAddOrUpdateRequest implements Serializable {
 
     private String phone;
 
-    private Integer checkAble;
+    private Integer checkAble =1;
 
-    private Integer uploadAble;
+    private Integer uploadAble =0;
 
+    @NotBlank(message = "学号不能为空")
     private String userAccount;
 
+    @NotBlank(message = "姓名不能为空")
     private String userName;
 
 }

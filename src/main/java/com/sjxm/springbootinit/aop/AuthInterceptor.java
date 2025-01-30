@@ -2,6 +2,7 @@ package com.sjxm.springbootinit.aop;
 
 import com.sjxm.springbootinit.annotation.AuthCheck;
 import com.sjxm.springbootinit.common.ErrorCode;
+import com.sjxm.springbootinit.constant.StudentProfileConstant;
 import com.sjxm.springbootinit.exception.BusinessException;
 import com.sjxm.springbootinit.model.entity.User;
 import com.sjxm.springbootinit.model.enums.UserRoleEnum;
@@ -44,14 +45,14 @@ public class AuthInterceptor {
         HttpServletRequest request = ((ServletRequestAttributes) requestAttributes).getRequest();
         // 当前登录用户
         User loginUser = userService.getLoginUser(request);
+        Integer userRole = loginUser.getUserRole();
+        UserRoleEnum userRoleEnum = UserRoleEnum.getEnumByValue(userRole);
         // 必须有该权限才通过
         if (StringUtils.isNotBlank(mustRole)) {
             UserRoleEnum mustUserRoleEnum = UserRoleEnum.getEnumByText(mustRole);
             if (mustUserRoleEnum == null) {
                 throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
             }
-            Integer userRole = loginUser.getUserRole();
-            UserRoleEnum userRoleEnum = UserRoleEnum.getEnumByValue(userRole);
             if(userRoleEnum==null){
                 throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
             }
@@ -62,6 +63,15 @@ public class AuthInterceptor {
             // 必须有管理员权限
             if (UserRoleEnum.TEACHER.equals(mustUserRoleEnum)||UserRoleEnum.STUDENT.equals(mustUserRoleEnum)) {
                 if (!mustRole.equals(userRoleEnum.getText())) {
+                    throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
+                }
+            }
+        }
+        if(UserRoleEnum.STUDENT.equals(userRoleEnum)){
+            //学生校验权限
+            String needProfile = authCheck.needProfile();
+            if(StringUtils.isNotBlank(needProfile)){
+                if(StudentProfileConstant.STUDENT_CHECK.equals(needProfile)&&loginUser.getCheckAble()==0||StudentProfileConstant.STUDENT_UPLOAD.equals(needProfile)&&loginUser.getUploadAble()==0){
                     throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
                 }
             }

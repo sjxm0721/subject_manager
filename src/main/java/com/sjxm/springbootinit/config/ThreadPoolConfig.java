@@ -4,6 +4,7 @@ import cn.hutool.core.thread.ThreadFactoryBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import javax.annotation.PreDestroy;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -17,15 +18,21 @@ import java.util.concurrent.TimeUnit;
 public class ThreadPoolConfig {
 
     @Bean
-    public ThreadPoolExecutor duplicateCheckThreadPool(){
+    public ThreadPoolExecutor duplicateCheckThreadPool() {
         return new ThreadPoolExecutor(
-                4,                      // 核心线程数
-                8,                      // 最大线程数
-                60L,                    // 空闲线程存活时间
+                Runtime.getRuntime().availableProcessors(),
+                Runtime.getRuntime().availableProcessors() * 2,
+                60L,
                 TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(100),
-                new ThreadFactoryBuilder().setNamePrefix("duplicate-check-thread-pool-").build()
+                new LinkedBlockingQueue<>(1000),
+                new ThreadFactoryBuilder().setNamePrefix("duplicate-check-thread-").build(),
+                new ThreadPoolExecutor.CallerRunsPolicy()
         );
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        duplicateCheckThreadPool().shutdown();
     }
 
 }

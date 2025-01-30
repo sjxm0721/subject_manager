@@ -2,6 +2,7 @@ package com.sjxm.springbootinit.model.dto.homework;
 
 import lombok.Data;
 
+import javax.validation.constraints.NotNull;
 import java.io.Serializable;
 
 /**
@@ -12,7 +13,9 @@ import java.io.Serializable;
 @Data
 public class HomeworkStatusUpdateRequest implements Serializable {
 
+    @NotNull(message = "作业id不能为空")
     private Long id;
+    @NotNull(message = "作业状态不能为空")
     private Integer suggested;
 
 }

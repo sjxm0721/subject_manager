@@ -2,6 +2,8 @@ package com.sjxm.springbootinit.config;
 
 import com.sjxm.springbootinit.interceptor.JwtTokenAdminInterceptor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.converter.HttpMessageConverter;
@@ -19,9 +21,10 @@ import java.util.Objects;
  * @Date: 2024/12/17
  * @Description:
  */
-@Slf4j
 @Configuration
 public class WebMvcConfiguration extends WebMvcConfigurationSupport {
+
+    private static final Logger logger = LoggerFactory.getLogger(WebMvcConfiguration.class);
 
     @Autowired
     private JwtTokenAdminInterceptor jwtTokenAdminInterceptor;
@@ -33,11 +36,13 @@ public class WebMvcConfiguration extends WebMvcConfigurationSupport {
      * @param registry
      */
     protected void addInterceptors(InterceptorRegistry registry) {
-        log.info("开始注册自定义拦截器...");
+        logger.info("开始注册自定义拦截器...");
         registry.addInterceptor(jwtTokenAdminInterceptor)
                 .addPathPatterns("/**")
                 .excludePathPatterns("/user/login")
-                .excludePathPatterns("/user/register");
+                .excludePathPatterns("/user/register")
+                .excludePathPatterns("/user/gen")
+                .excludePathPatterns("/user/check");
     }
 
     /**

@@ -7,19 +7,22 @@ import com.aliyun.oss.OSSException;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
 
 @Data
 @AllArgsConstructor
-@Slf4j
 public class AliOssUtil {
 
     private String endpoint;
     private String accessKeyId;
     private String accessKeySecret;
     private String bucketName;
+
+    private static final Logger logger = LoggerFactory.getLogger(AliOssUtil.class);
 
     /**
      * 文件上传
@@ -63,7 +66,7 @@ public class AliOssUtil {
                 .append("/")
                 .append(objectName);
 
-        log.info("文件上传到:{}", stringBuilder.toString());
+        logger.info("文件上传到:{}", stringBuilder.toString());
 
         return stringBuilder.toString();
     }

@@ -3,10 +3,14 @@ package com.sjxm.springbootinit.biz;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.ObjectUtil;
+import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.TypeReference;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sjxm.springbootinit.common.ErrorCode;
 import com.sjxm.springbootinit.exception.BusinessException;
 import com.sjxm.springbootinit.model.dto.homework.*;
@@ -15,15 +19,15 @@ import com.sjxm.springbootinit.model.enums.CheckStatusEnum;
 import com.sjxm.springbootinit.model.enums.UserRoleEnum;
 import com.sjxm.springbootinit.model.vo.*;
 import com.sjxm.springbootinit.service.*;
-import com.sjxm.springbootinit.utils.AliOssUtil;
-import com.sjxm.springbootinit.utils.ExcelExportUtil;
-import com.sjxm.springbootinit.utils.VideoPostGenerateUtil;
+import com.sjxm.springbootinit.utils.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.rocketmq.client.producer.SendCallback;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.apache.rocketmq.spring.support.RocketMQHeaders;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Component;
@@ -43,6 +47,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -54,8 +59,10 @@ import java.util.zip.ZipOutputStream;
  */
 
 @Component
-@Slf4j
 public class HomeworkBiz {
+
+    private static final Logger logger = LoggerFactory.getLogger(HomeworkBiz.class);
+
 
     @Resource
     private SubjectStudentService subjectStudentService;
@@ -127,7 +134,7 @@ public class HomeworkBiz {
     }
 
     public void submitHomework(HomeworkAddRequest request) {
-        Long id = request.getId();
+            Long id = request.getId();
             Long subjectId = request.getSubjectId();
             Long studentId = request.getStudentId();
             if(subjectId==null||studentId==null){
@@ -139,9 +146,9 @@ public class HomeworkBiz {
             Integer groupNum = subjectStudent.getGroupNum();
             Homework homework = new Homework();
             BeanUtil.copyProperties(request,homework);
+            homework.setBackground(RichTextXssFilterUtil.clean(homework.getBackground()));
+            homework.setSystemDesign(RichTextXssFilterUtil.clean(homework.getSystemDesign()));
             homework.setGroupNum(groupNum);
-
-            homework.setSubjectType(request.getType());
 
             //设置封面
             if(id!=null){
@@ -149,7 +156,12 @@ public class HomeworkBiz {
             }
             homeworkService.saveOrUpdate(homework);
 
-            //发送查重消息到MQ
+            //删除缓存
+        redisDeleteByPrefix("homework-history:pagination:");
+
+
+
+        //发送查重消息到MQ
         try {
             Message<String> message = MessageBuilder.withPayload(String.valueOf(homework.getId()))
                             .setHeader(RocketMQHeaders.KEYS,"homework_"+homework.getId()).build();
@@ -159,7 +171,7 @@ public class HomeworkBiz {
                     new SendCallback() {
                         @Override
                         public void onSuccess(SendResult sendResult) {
-                            log.info("查重消息发送成功,homeworkId={},msgId={}",
+                            logger.info("查重消息发送成功,homeworkId={},msgId={}",
                                     homework.getId(), sendResult.getMsgId());
 
                             // 记录消息
@@ -173,14 +185,22 @@ public class HomeworkBiz {
 
                         @Override
                         public void onException(Throwable throwable) {
-                            log.error("查重消息发送失败,homeworkId=" + homework.getId(), throwable);
+                            logger.error("查重消息发送失败,homeworkId=" + homework.getId(), throwable);
                         }
                     }
             );
         } catch (Exception e) {
-            log.error("发送查重消息失败", e);
+            logger.error("发送查重消息失败", e);
             throw new BusinessException(ErrorCode.DUPLICATE_CHECK_ERROR,
                     "构建查重请求失败：" + e.getMessage());
+        }
+    }
+
+    public void redisDeleteByPrefix(String prefix) {
+        String pattern = prefix + "*";
+        Set<String> keys = RedisUtil.KeyOps.keys(pattern);
+        if (!CollUtil.isEmpty(keys)) {
+            RedisUtil.KeyOps.delete(keys);
         }
     }
 
@@ -223,6 +243,9 @@ public class HomeworkBiz {
         LambdaUpdateWrapper<Homework> homeworkLambdaUpdateWrapper = new LambdaUpdateWrapper<>();
         homeworkLambdaUpdateWrapper.set(Homework::getCommend,suggested).eq(Homework::getId,id);
         homeworkService.update(homeworkLambdaUpdateWrapper);
+
+        //删除缓存
+        redisDeleteByPrefix("homework-history:pagination:");
     }
 
     /**
@@ -247,25 +270,111 @@ public class HomeworkBiz {
         return yearList.stream().distinct().sorted((a,b)->b-a).collect(Collectors.toList());
     }
 
-    public Page<HomeworkHistoryVO> getHomeworkHistoryPage(HomeworkHistoryPageQueryRequest homeworkHistoryPageQueryRequest, HttpServletRequest request) {
-        User loginUser = userService.getLoginUser(request);
-        Integer userRole = loginUser.getUserRole();
-        Integer year = homeworkHistoryPageQueryRequest.getYear();
-        int current = homeworkHistoryPageQueryRequest.getCurrent();
-        int pageSize = homeworkHistoryPageQueryRequest.getPageSize();
-        LambdaQueryWrapper<Homework> homeworkLambdaQueryWrapper = new LambdaQueryWrapper<>();
-        homeworkLambdaQueryWrapper.eq(year!=null,Homework::getSubmitYear,year);
-        if(!UserRoleEnum.TEACHER.getValue().equals(userRole)){
-            //学生、游客
-            homeworkLambdaQueryWrapper.eq(Homework::getCommend,1);
+    private static final String CACHE_KEY_PREFIX = "homework:history:page:";
+    private static final String EMPTY_CACHE = "EMPTY";
+    private static final long CACHE_EXPIRE_TIME = 5;
+    private static final TimeUnit CACHE_EXPIRE_UNIT = TimeUnit.MINUTES;
+
+    public Page<HomeworkHistoryVO> getHomeworkHistoryPage(
+            HomeworkHistoryPageQueryRequest request,
+            HttpServletRequest httpRequest) {
+        // 1. 生成缓存key
+        String cacheKey = generateCacheKey(request, httpRequest);
+
+        // 2. 查询缓存
+        String cachedData = RedisUtil.StringOps.get(cacheKey);
+
+        // 3. 判断是否命中空值缓存（防止缓存穿透）
+        if (EMPTY_CACHE.equals(cachedData)) {
+            return new Page<>();
         }
-        Page<Homework> homeworkPage = homeworkService.page(new Page<>(current,pageSize),homeworkLambdaQueryWrapper);
-        Page<HomeworkHistoryVO> homeworkHistoryVOPage = new Page<>();
-        BeanUtil.copyProperties(homeworkPage,homeworkHistoryVOPage);
-        List<Homework> homeworkList = homeworkPage.getRecords();
-        List<HomeworkHistoryVO> homeworkHistoryVOList = homeworkList.stream().map(this::obj2HistoryVO).collect(Collectors.toList());
-        homeworkHistoryVOPage.setRecords(homeworkHistoryVOList);
-        return homeworkHistoryVOPage;
+
+        // 4. 缓存命中，返回数据
+        if (!StrUtil.isBlankIfStr(cachedData)) {
+            try {
+                return JSON.parseObject(cachedData,
+                        new TypeReference<Page<HomeworkHistoryVO>>() {});
+            } catch (Exception e) {
+                logger.error("Cache data parse error", e);
+                RedisUtil.KeyOps.delete(cacheKey);
+            }
+        }
+
+        // 5. 缓存未命中，使用本地锁（单机环境）防止缓存击穿
+        synchronized (cacheKey.intern()) {
+            // 双重检查
+            cachedData = RedisUtil.StringOps.get(cacheKey);
+            if (!StrUtil.isBlankIfStr(cachedData)) {
+                return JSON.parseObject(cachedData,
+                        new TypeReference<Page<HomeworkHistoryVO>>() {});
+            }
+
+            // 6. 查询数据库
+            Page<HomeworkHistoryVO> result = queryFromDatabase(request, httpRequest);
+
+            // 7. 写入缓存（防止缓存雪崩）
+            if (result != null && !result.getRecords().isEmpty()) {
+                // 添加随机过期时间，防止缓存雪崩
+                long expireTime = CACHE_EXPIRE_TIME +
+                        RandomUtil.randomLong(0, CACHE_EXPIRE_TIME);
+                RedisUtil.StringOps.setEx(cacheKey,
+                        JSON.toJSONString(result),
+                        expireTime,
+                        CACHE_EXPIRE_UNIT);
+            } else {
+                // 缓存空值，防止缓存穿透
+                RedisUtil.StringOps.setEx(cacheKey,
+                        EMPTY_CACHE,
+                        60,
+                        TimeUnit.SECONDS);
+            }
+
+            return result;
+        }
+    }
+
+    private String generateCacheKey(
+            HomeworkHistoryPageQueryRequest request,
+            HttpServletRequest httpRequest) {
+        User loginUser = userService.getLoginUser(httpRequest);
+        Integer userRole = loginUser.getUserRole();
+        Integer year = request.getYear();
+
+        return new StringBuilder(CACHE_KEY_PREFIX)
+                .append("role:").append(userRole)
+                .append(":year:").append(year != null ? year : "all")
+                .append(":page:").append(request.getCurrent())
+                .append(":size:").append(request.getPageSize())
+                .toString();
+    }
+
+    private Page<HomeworkHistoryVO> queryFromDatabase(
+            HomeworkHistoryPageQueryRequest request,
+            HttpServletRequest httpRequest) {
+        // 原有的数据库查询逻辑
+        User loginUser = userService.getLoginUser(httpRequest);
+        Integer userRole = loginUser.getUserRole();
+        Integer year = request.getYear();
+
+        LambdaQueryWrapper<Homework> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(year != null, Homework::getSubmitYear, year);
+        if (!UserRoleEnum.TEACHER.getValue().equals(userRole)) {
+            wrapper.eq(Homework::getCommend, 1);
+        }
+
+        Page<Homework> homeworkPage = homeworkService.page(
+                new Page<>(request.getCurrent(), request.getPageSize()),
+                wrapper);
+
+        // 转换为VO
+        Page<HomeworkHistoryVO> resultPage = new Page<>();
+        BeanUtil.copyProperties(homeworkPage, resultPage);
+        List<HomeworkHistoryVO> voList = homeworkPage.getRecords().stream()
+                .map(this::obj2HistoryVO)
+                .collect(Collectors.toList());
+        resultPage.setRecords(voList);
+
+        return resultPage;
     }
 
     public Homework getHomeworkDetail(Long homeworkId, HttpServletRequest request) {
@@ -414,7 +523,7 @@ public class HomeworkBiz {
                 try {
                     FileUtils.deleteDirectory(tempDir);
                 } catch (IOException e) {
-                    log.error("清理临时目录失败", e);
+                    logger.error("清理临时目录失败", e);
                 }
             }
         }
@@ -464,7 +573,7 @@ public class HomeworkBiz {
                 zipOut.closeEntry();
 
             } catch (Exception e) {
-                log.error("下载OSS文件失败: " + url, e);
+                logger.error("下载OSS文件失败: " + url, e);
             }
         }
     }

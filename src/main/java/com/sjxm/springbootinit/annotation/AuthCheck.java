@@ -1,5 +1,7 @@
 package com.sjxm.springbootinit.annotation;
 
+import com.sjxm.springbootinit.model.enums.StudentProfileEnum;
+
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -21,6 +23,8 @@ public @interface AuthCheck {
      * @return
      */
     String mustRole() default "";
+
+    String needProfile() default "";
 
 }
 

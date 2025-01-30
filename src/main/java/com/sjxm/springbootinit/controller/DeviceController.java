@@ -6,6 +6,7 @@ import com.sjxm.springbootinit.biz.DeviceBiz;
 import com.sjxm.springbootinit.common.BaseResponse;
 import com.sjxm.springbootinit.common.ErrorCode;
 import com.sjxm.springbootinit.common.ResultUtils;
+import com.sjxm.springbootinit.constant.StudentProfileConstant;
 import com.sjxm.springbootinit.constant.UserConstant;
 import com.sjxm.springbootinit.exception.BusinessException;
 import com.sjxm.springbootinit.model.dto.device.*;
@@ -17,6 +18,8 @@ import org.springframework.web.bind.annotation.*;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.validation.Valid;
+import javax.validation.constraints.NotNull;
 
 /**
  * @Author: 四季夏目
@@ -42,7 +45,7 @@ public class DeviceController {
 
     @AuthCheck(mustRole = UserConstant.TEACHER_ROLE)
     @PostMapping("/update")
-    public BaseResponse<Boolean> update(@RequestBody DeviceUpdateRequest request){
+    public BaseResponse<Boolean> update(@RequestBody @Valid DeviceUpdateRequest request){
         if(request==null){
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
@@ -50,9 +53,9 @@ public class DeviceController {
         return ResultUtils.success(true);
     }
 
-    @AuthCheck(mustRole = UserConstant.STUDENT_ROLE)
+    @AuthCheck(mustRole = UserConstant.STUDENT_ROLE,needProfile = StudentProfileConstant.STUDENT_UPLOAD)
     @PostMapping("/borrow")
-    public BaseResponse<Boolean> borrow(@RequestBody DeviceBorrowRequest request, HttpServletRequest httpServletRequest){
+    public BaseResponse<Boolean> borrow(@RequestBody @Valid DeviceBorrowRequest request, HttpServletRequest httpServletRequest){
         deviceBiz.borrowDevice(request,httpServletRequest);
         return ResultUtils.success(true);
     }
@@ -67,7 +70,7 @@ public class DeviceController {
 
     @AuthCheck(mustRole = UserConstant.TEACHER_ROLE)
     @PostMapping("/store")
-    public BaseResponse<Boolean> storeDevice(@RequestBody DeviceStoreRequest deviceStoreRequest){
+    public BaseResponse<Boolean> storeDevice(@RequestBody @Valid DeviceStoreRequest deviceStoreRequest){
         deviceBiz.storeDevice(deviceStoreRequest);
         return ResultUtils.success(true);
     }
@@ -79,14 +82,14 @@ public class DeviceController {
         return ResultUtils.success(page);
     }
 
-    @AuthCheck(mustRole = UserConstant.STUDENT_ROLE)
+    @AuthCheck(mustRole = UserConstant.STUDENT_ROLE,needProfile = StudentProfileConstant.STUDENT_UPLOAD)
     @GetMapping("/cancel-apply")
     public BaseResponse<Boolean> cancelApply(Long id){
         deviceBiz.cancelApply(id);
         return ResultUtils.success(true);
     }
 
-    @AuthCheck(mustRole = UserConstant.STUDENT_ROLE)
+    @AuthCheck(mustRole = UserConstant.STUDENT_ROLE,needProfile = StudentProfileConstant.STUDENT_UPLOAD)
     @GetMapping("/return")
     public BaseResponse<Boolean> returnDevice(Long id){
         deviceBiz.returnDevice(id);

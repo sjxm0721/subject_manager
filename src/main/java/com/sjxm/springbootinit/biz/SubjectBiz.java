@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import javax.validation.Valid;
 import java.sql.Date;
 import java.util.ArrayList;
 import java.util.List;
@@ -78,7 +79,7 @@ public class SubjectBiz {
         return subjectService.page(new Page<>(current, pageSize), subjectLambdaQueryWrapper);
     }
 
-    public void addOrUpdate(SubjectAddOrUpdateRequest subjectAddOrUpdateRequest,HttpServletRequest request) {
+    public void addOrUpdate(SubjectAddOrUpdateRequest subjectAddOrUpdateRequest, HttpServletRequest request) {
         User loginUser = userService.getLoginUser(request);
         if(ObjectUtil.isNull(loginUser)){
             throw new BusinessException(ErrorCode.NOT_LOGIN_ERROR);

@@ -1,18 +1,26 @@
 package com.sjxm.springbootinit.config;
 
-import io.lettuce.core.dynamic.annotation.Value;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.common.TopicConfig;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.apache.rocketmq.tools.admin.DefaultMQAdminExt;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@Slf4j
 public class RocketMQConfig {
+
+    @Value("${rocketmq.name-server}")
+    private String nameServer;
+
+
+
+    private static final Logger logger = LoggerFactory.getLogger(RocketMQConfig.class);
 
 
     @Bean
@@ -21,7 +29,7 @@ public class RocketMQConfig {
 
         DefaultMQProducer producer = new DefaultMQProducer();
         producer.setProducerGroup("homework_producer_group");
-        producer.setNamesrvAddr("localhost:9876");
+        producer.setNamesrvAddr(nameServer);
         producer.setVipChannelEnabled(false);
         producer.setRetryTimesWhenSendAsyncFailed(2);
         producer.setSendMsgTimeout(3000);
@@ -34,7 +42,7 @@ public class RocketMQConfig {
     @Bean
     public DefaultMQAdminExt mqAdminExt() throws MQClientException {
         DefaultMQAdminExt mqAdminExt = new DefaultMQAdminExt();
-        mqAdminExt.setNamesrvAddr("localhost:9876");
+        mqAdminExt.setNamesrvAddr(nameServer);
         mqAdminExt.start();
 
         // 创建topic
@@ -45,9 +53,9 @@ public class RocketMQConfig {
             topicConfig.setWriteQueueNums(4);
 
             mqAdminExt.createAndUpdateTopicConfig("localhost:10911", topicConfig);
-            log.info("Topic创建成功");
+            logger.info("Topic创建成功");
         } catch (Exception e) {
-            log.error("创建Topic失败", e);
+            logger.error("创建Topic失败", e);
         }
 
         return mqAdminExt;

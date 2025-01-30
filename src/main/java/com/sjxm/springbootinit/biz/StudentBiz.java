@@ -23,6 +23,8 @@ import com.sjxm.springbootinit.service.SubjectStudentService;
 import com.sjxm.springbootinit.service.UserService;
 import com.sjxm.springbootinit.utils.ExcelImportUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.DigestUtils;
@@ -44,8 +46,9 @@ import static com.sjxm.springbootinit.service.impl.UserServiceImpl.SALT;
  */
 
 @Component
-@Slf4j
 public class StudentBiz {
+
+    private static final Logger logger = LoggerFactory.getLogger(StudentBiz.class);
 
     @Resource
     private UserService userService;
@@ -75,6 +78,7 @@ public class StudentBiz {
             Subject subject = subjectService.getById(subjectStudent.getSubjectId());
             if(subject!=null){
                 groupDetail.setSubjectId(subject.getId());
+                groupDetail.setGrade(subject.getGrade());
                 groupDetail.setSubjectName(subject.getTitle());
             }
             groupDetail.setSubjectStudentId(subjectStudent.getId());
@@ -151,7 +155,7 @@ public class StudentBiz {
         }
 
         if(!errorMsgs.isEmpty()){
-            log.info("Excel数据校验失败：\n{}", String.join("\n", errorMsgs));
+            logger.info("Excel数据校验失败：\n{}", String.join("\n", errorMsgs));
             throw new BusinessException(ErrorCode.OPERATION_ERROR);
         }
 

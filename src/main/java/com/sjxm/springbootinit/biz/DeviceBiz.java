@@ -128,7 +128,7 @@ public class DeviceBiz {
         LambdaUpdateWrapper<Device> deviceLambdaUpdateWrapper = new LambdaUpdateWrapper<>();
         deviceLambdaUpdateWrapper.set(!StrUtil.isBlankIfStr(deviceName),Device::getDeviceName,deviceName)
                 .set(totalNum!=null,Device::getTotalNum,totalNum)
-                .set(Device::getDescription,description);
+                .set(Device::getDescription,description).eq(Device::getId,id);
         deviceService.update(deviceLambdaUpdateWrapper);
     }
 

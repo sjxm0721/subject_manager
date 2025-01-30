@@ -62,6 +62,7 @@ public class StudentVO implements Serializable {
         private Long subjectStudentId;
         private Long subjectId;
         private String subjectName;
+        private String grade;
         private Integer groupNum;
     }
 

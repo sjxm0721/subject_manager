@@ -1,69 +1,89 @@
 package com.sjxm.springbootinit.utils.similarity;
 
 import cn.hutool.core.util.StrUtil;
+import com.github.junrar.Archive;
+import com.github.junrar.exception.RarException;
+import com.github.junrar.rarfile.FileHeader;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream;
 import org.apache.commons.io.FilenameUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.net.URL;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * @Author: 四季夏目
  * @Date: 2025/1/2
  * @Description:
  */
-@Slf4j
 public class CodeSimilarityUtil {
+    private static final Logger logger = LoggerFactory.getLogger(CodeSimilarityUtil.class);
 
+    // 支持的代码文件扩展名
     private static final Set<String> CODE_EXTENSIONS = new HashSet<>(Arrays.asList(
-            "java", "cpp", "c", "h", "hpp", "py", "js", "html", "css", "sql"
+            "java", "cpp", "c", "h", "hpp", "py", "js", "ts",
+            "html", "css", "scss", "sass", "sql"
     ));
 
+    /**
+     * 计算两个代码压缩包的相似度
+     */
     public static double calculateCodeSimilarity(String sourceUrls1, String sourceUrls2) {
-        if (StrUtil.isBlank(sourceUrls1) || StrUtil.isBlank(sourceUrls2)) {
-            return 0.0;
-        }
-
         try {
-            // 解析所有源码文件内容
-            Map<String, String> codeFiles1 = extractCodeFiles(sourceUrls1);
-            Map<String, String> codeFiles2 = extractCodeFiles(sourceUrls2);
+            logger.info("开始计算代码相似度: sourceUrls1长度={}, sourceUrls2长度={}",
+                    sourceUrls1 != null ? sourceUrls1.length() : 0,
+                    sourceUrls2 != null ? sourceUrls2.length() : 0);
 
-            if (codeFiles1.isEmpty() || codeFiles2.isEmpty()) {
+            if (StrUtil.isBlank(sourceUrls1) || StrUtil.isBlank(sourceUrls2)) {
+                logger.warn("代码URL为空, 返回0");
                 return 0.0;
             }
 
-            // 按文件类型分组计算相似度
-            Map<String, Double> typeSimilarities = new HashMap<>();
-            Set<String> allExtensions = new HashSet<>();
-            allExtensions.addAll(getFileExtensions(codeFiles1.keySet()));
-            allExtensions.addAll(getFileExtensions(codeFiles2.keySet()));
+            Map<String, String> files1 = extractCodeFiles(sourceUrls1);
+            Map<String, String> files2 = extractCodeFiles(sourceUrls2);
+            logger.debug("代码文件数量: files1={}, files2={}", files1.size(), files2.size());
 
-            // 对每种类型的代码文件分别计算相似度
-            for (String ext : allExtensions) {
-                Map<String, String> typeFiles1 = filterByExtension(codeFiles1, ext);
-                Map<String, String> typeFiles2 = filterByExtension(codeFiles2, ext);
+            if (files1.isEmpty() || files2.isEmpty()) {
+                logger.warn("代码文件为空, 返回0");
+                return 0.0;
+            }
+
+            double totalSimilarity = 0.0;
+            int totalFiles = 0;
+
+            for (String ext : CODE_EXTENSIONS) {
+                Map<String, String> typeFiles1 = filterByExtension(files1, ext);
+                Map<String, String> typeFiles2 = filterByExtension(files2, ext);
+                logger.debug("文件类型[{}]数量: files1={}, files2={}",
+                        ext, typeFiles1.size(), typeFiles2.size());
 
                 if (!typeFiles1.isEmpty() && !typeFiles2.isEmpty()) {
-                    double typeSimilarity = calculateTypeCodeSimilarity(typeFiles1, typeFiles2);
-                    typeSimilarities.put(ext, typeSimilarity);
+                    double similarity = compareFileGroups(typeFiles1, typeFiles2);
+                    int weight = Math.max(typeFiles1.size(), typeFiles2.size());
+                    totalSimilarity += similarity * weight;
+                    totalFiles += weight;
+                    logger.debug("文件类型[{}]相似度: similarity={}, weight={}",
+                            ext, similarity, weight);
                 }
             }
 
-            // 加权平均计算总相似度
-            return calculateWeightedSimilarity(typeSimilarities);
+            double finalSimilarity = totalFiles > 0 ? totalSimilarity / totalFiles : 0.0;
+            logger.info("代码相似度计算完成: similarity={}, 总文件数={}",
+                    finalSimilarity, totalFiles);
+            return finalSimilarity;
         } catch (Exception e) {
-            log.error("计算代码相似度失败", e);
+            logger.error("计算代码相似度失败", e);
             return 0.0;
         }
     }
+
 
     /**
      * 提取压缩包中的代码文件
@@ -73,423 +93,419 @@ public class CodeSimilarityUtil {
         String[] urls = sourceUrls.split(",");
 
         for (String url : urls) {
-            url = url.trim();
-            if (!url.startsWith("http")) {
+            if (!url.trim().startsWith("http")) {
                 continue;
             }
 
-            try (InputStream inputStream = new BufferedInputStream(new URL(url).openStream());
-                 ZipArchiveInputStream zipIn = new ZipArchiveInputStream(inputStream)) {
+            try (InputStream in = new BufferedInputStream(new URL(url.trim()).openStream())) {
+                // 读取前几个字节来判断文件类型
+                in.mark(8);
+                byte[] magicBytes = new byte[8];
+                in.read(magicBytes);
+                in.reset();
 
-                ZipArchiveEntry entry;
-                while ((entry = zipIn.getNextZipEntry()) != null) {
-                    if (!entry.isDirectory()) {
-                        String extension = FilenameUtils.getExtension(entry.getName()).toLowerCase();
-                        if (CODE_EXTENSIONS.contains(extension)) {
-                            // 读取代码文件内容
+                // 根据文件格式选择处理方法
+                String fileExtension = url.substring(url.lastIndexOf(".") + 1).toLowerCase();
+
+                if (fileExtension.equals("zip") || isZipFile(magicBytes)) {
+                    extractZipCode(in, codeFiles);
+                } else if (fileExtension.equals("rar") || isRarFile(magicBytes)) {
+                    extractRarCode(in, codeFiles);
+                } else {
+                    logger.warn("不支持的文件格式: {}", fileExtension);
+                }
+            } catch (Exception e) {
+                logger.error("处理压缩文件失败: {}", url, e);
+            }
+        }
+        return codeFiles;
+    }
+
+    private static void extractZipCode(InputStream in, Map<String, String> codeFiles) {
+        try (ZipArchiveInputStream zipIn = new ZipArchiveInputStream(in, "UTF-8", true, true)) {
+            ZipArchiveEntry entry;
+            while ((entry = zipIn.getNextZipEntry()) != null) {
+                if (!entry.isDirectory()) {
+                    String ext = FilenameUtils.getExtension(entry.getName()).toLowerCase();
+                    if (CODE_EXTENSIONS.contains(ext)) {
+                        try {
                             String content = readContent(zipIn);
-                            codeFiles.put(entry.getName(), preprocessCode(content));
+                            if (!content.isEmpty()) {
+                                codeFiles.put(entry.getName(), preprocessCode(content));
+                            }
+                        } catch (IOException e) {
+                            logger.warn("读取ZIP文件内容失败: {}", entry.getName(), e);
                         }
                     }
                 }
             }
+        } catch (Exception e) {
+            logger.error("解压ZIP文件失败", e);
         }
-        return codeFiles;
+    }
+
+    private static void extractRarCode(InputStream in, Map<String, String> codeFiles) {
+        File tempFile = null;
+        try {
+            // 创建临时文件
+            tempFile = File.createTempFile("temp", ".rar");
+            try (FileOutputStream fos = new FileOutputStream(tempFile)) {
+                byte[] buffer = new byte[4096];
+                int bytesRead;
+                while ((bytesRead = in.read(buffer)) != -1) {
+                    fos.write(buffer, 0, bytesRead);
+                }
+            }
+
+            // 处理RAR文件
+            try (Archive archive = new Archive(tempFile)) {
+                FileHeader fileHeader;
+                while ((fileHeader = archive.nextFileHeader()) != null) {
+                    if (!fileHeader.isDirectory()) {
+                        String name = fileHeader.getFileNameString();
+                        String ext = FilenameUtils.getExtension(name).toLowerCase();
+
+                        if (CODE_EXTENSIONS.contains(ext)) {
+                            try {
+                                String content = extractRarContent(archive, fileHeader);
+                                if (!content.isEmpty()) {
+                                    codeFiles.put(name, preprocessCode(content));
+                                }
+                            } catch (Exception e) {
+                                logger.warn("读取RAR文件内容失败: {}", name, e);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.error("处理RAR文件失败", e);
+        } finally {
+            // 清理临时文件
+            if (tempFile != null && tempFile.exists()) {
+                tempFile.delete();
+            }
+        }
+    }
+
+    private static String extractRarContent(Archive archive, FileHeader fileHeader) throws IOException, RarException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        archive.extractFile(fileHeader, baos);
+        return new String(baos.toByteArray(), "UTF-8");
+    }
+
+    private static boolean isZipFile(byte[] bytes) {
+        return bytes.length >= 4 &&
+                bytes[0] == 0x50 && bytes[1] == 0x4B &&
+                bytes[2] == 0x03 && bytes[3] == 0x04;
+    }
+
+    private static boolean isRarFile(byte[] bytes) {
+        return bytes.length >= 7 &&
+                bytes[0] == 0x52 && bytes[1] == 0x61 &&
+                bytes[2] == 0x72 && bytes[3] == 0x21;
+    }
+
+    private static String readContent(ZipArchiveInputStream zipIn) throws IOException {
+        StringBuilder content = new StringBuilder();
+        byte[] buffer = new byte[4096];
+        int bytesRead;
+        int totalBytes = 0;
+        final int MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB限制
+
+        while ((bytesRead = zipIn.read(buffer)) != -1) {
+            totalBytes += bytesRead;
+            if (totalBytes > MAX_FILE_SIZE) {
+                logger.warn("文件过大，已截断");
+                break;
+            }
+            content.append(new String(buffer, 0, bytesRead, "UTF-8"));
+        }
+
+        return content.toString();
     }
 
     /**
      * 预处理代码内容
      */
     private static String preprocessCode(String code) {
-        return code.replaceAll("\\s+", " ") // 统一空白字符
-                .replaceAll("//.*?\\n", "\n") // 删除单行注释
-                .replaceAll("/\\*.*?\\*/", "") // 删除多行注释
-                .replaceAll("\".*?\"", "\"\"") // 统一字符串
-                .replaceAll("'.*?'", "''") // 统一字符
+        // 移除注释
+        code = code.replaceAll("//.*|/\\*[\\s\\S]*?\\*/", "")
+                .replaceAll("<!--[\\s\\S]*?-->", ""); // HTML注释
+
+        // 移除字符串常量
+        code = code.replaceAll("\"[^\"]*\"", "\"\"")
+                .replaceAll("'[^']*'", "''");
+
+        // 规范化空白字符
+        code = code.replaceAll("\\s+", " ")
+                .replaceAll("\\b\\s+\\b", " ")
                 .trim();
+
+        return code;
+    }
+
+    /**
+     * 比较文件组的相似度
+     */
+    private static double compareFileGroups(Map<String, String> files1, Map<String, String> files2) {
+        List<Double> similarities = new ArrayList<>();
+
+        for (String content1 : files1.values()) {
+            Set<String> features1 = extractFeatures(content1);
+
+            for (String content2 : files2.values()) {
+                Set<String> features2 = extractFeatures(content2);
+                double similarity = calculateJaccardSimilarity(features1, features2);
+                similarities.add(similarity);
+            }
+        }
+
+        // 返回最高相似度
+        return similarities.stream()
+                .mapToDouble(Double::doubleValue)
+                .max()
+                .orElse(0.0);
+    }
+
+    /**
+     * 提取代码特征
+     */
+    private static Set<String> extractFeatures(String code) {
+        Set<String> features = new HashSet<>();
+
+        // 分割成token
+        String[] tokens = code.split("[\\s\\{\\}\\(\\)\\[\\]\\;\\,\\.\\+\\-\\*\\/\\=\\<\\>\\!\\&\\|]+");
+
+        // 添加单个token作为特征
+        features.addAll(Arrays.asList(tokens));
+
+        // 添加相邻token对作为特征
+        for (int i = 0; i < tokens.length - 1; i++) {
+            features.add(tokens[i] + " " + tokens[i + 1]);
+        }
+
+        // 添加简单的结构特征
+        features.add("DEPTH:" + countBraceDepth(code));
+        features.add("LENGTH:" + code.length() / 100); // 长度特征分段
+
+        // 添加关键字特征
+        addKeywordFeatures(code, features);
+
+        return features;
+    }
+
+    /**
+     * 计算代码的括号嵌套深度
+     */
+    private static int countBraceDepth(String code) {
+        int depth = 0;
+        int maxDepth = 0;
+
+        for (char c : code.toCharArray()) {
+            if (c == '{') {
+                depth++;
+                maxDepth = Math.max(maxDepth, depth);
+            } else if (c == '}') {
+                depth = Math.max(0, depth - 1);
+            }
+        }
+
+        return maxDepth;
+    }
+
+    /**
+     * 添加关键字特征
+     */
+    private static void addKeywordFeatures(String code, Set<String> features) {
+        // Java关键字
+        String[] javaKeywords = {
+                "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char",
+                "class", "const", "continue", "default", "do", "double", "else", "enum",
+                "extends", "final", "finally", "float", "for", "goto", "if", "implements",
+                "import", "instanceof", "int", "interface", "long", "native", "new", "package",
+                "private", "protected", "public", "return", "short", "static", "strictfp",
+                "super", "switch", "synchronized", "this", "throw", "throws", "transient",
+                "try", "void", "volatile", "while"
+        };
+
+        // C/C++关键字
+        String[] cppKeywords = {
+                "auto", "break", "case", "char", "const", "continue", "default", "do",
+                "double", "else", "enum", "extern", "float", "for", "goto", "if", "int",
+                "long", "register", "return", "short", "signed", "sizeof", "static",
+                "struct", "switch", "typedef", "union", "unsigned", "void", "volatile",
+                "while", "asm", "bool", "catch", "class", "const_cast", "delete",
+                "dynamic_cast", "explicit", "export", "false", "friend", "inline",
+                "mutable", "namespace", "new", "operator", "private", "protected",
+                "public", "reinterpret_cast", "static_cast", "template", "this",
+                "throw", "true", "try", "typeid", "typename", "using", "virtual",
+                "wchar_t", "nullptr"
+        };
+
+        // Python关键字
+        String[] pythonKeywords = {
+                "False", "None", "True", "and", "as", "assert", "async", "await",
+                "break", "class", "continue", "def", "del", "elif", "else", "except",
+                "finally", "for", "from", "global", "if", "import", "in", "is",
+                "lambda", "nonlocal", "not", "or", "pass", "raise", "return",
+                "try", "while", "with", "yield"
+        };
+
+        // JavaScript/TypeScript关键字
+        String[] jsKeywords = {
+                "break", "case", "catch", "class", "const", "continue", "debugger",
+                "default", "delete", "do", "else", "enum", "export", "extends", "false",
+                "finally", "for", "function", "if", "import", "in", "instanceof",
+                "new", "null", "return", "super", "switch", "this", "throw", "true",
+                "try", "typeof", "var", "void", "while", "with", "let", "static",
+                "yield", "async", "await", "implements", "interface", "package",
+                "private", "protected", "public", "as", "any", "boolean", "constructor",
+                "declare", "get", "module", "require", "number", "set", "string",
+                "symbol", "type", "undefined", "unique", "unknown", "from", "of"
+        };
+
+        // HTML标签和属性
+        String[] htmlKeywords = {
+                "html", "head", "body", "div", "span", "p", "a", "img", "ul", "li",
+                "table", "tr", "td", "th", "form", "input", "button", "select",
+                "option", "textarea", "script", "style", "link", "meta", "title",
+                "class", "id", "href", "src", "alt", "type", "value", "name",
+                "placeholder", "required", "disabled", "checked", "selected",
+                "readonly", "multiple", "action", "method", "target", "rel"
+        };
+
+        // CSS关键字
+        String[] cssKeywords = {
+                "align", "background", "border", "bottom", "box", "clear", "color",
+                "content", "cursor", "display", "flex", "float", "font", "grid",
+                "height", "justify", "left", "line", "margin", "max", "min",
+                "opacity", "order", "outline", "overflow", "padding", "position",
+                "right", "text", "top", "transform", "transition", "visibility",
+                "width", "z-index", "important", "hover", "active", "focus",
+                "before", "after", "root", "nth-child", "first-child", "last-child"
+        };
+
+        // SQL关键字
+        String[] sqlKeywords = {
+                "select", "from", "where", "insert", "update", "delete", "create",
+                "alter", "drop", "table", "index", "view", "into", "values", "set",
+                "join", "left", "right", "inner", "outer", "on", "group", "by",
+                "having", "order", "asc", "desc", "distinct", "between", "like",
+                "in", "is", "null", "not", "and", "or", "primary", "key", "foreign",
+                "references", "constraint", "default", "auto_increment", "unique",
+                "database", "use", "grant", "revoke", "commit", "rollback", "union"
+        };
+
+        // 根据文件扩展名选择对应的关键字集合
+        Map<String, String[]> languageKeywords = new HashMap<>();
+        languageKeywords.put("java", javaKeywords);
+        languageKeywords.put("cpp", cppKeywords);
+        languageKeywords.put("c", cppKeywords);
+        languageKeywords.put("hpp", cppKeywords);
+        languageKeywords.put("h", cppKeywords);
+        languageKeywords.put("py", pythonKeywords);
+        languageKeywords.put("js", jsKeywords);
+        languageKeywords.put("ts", jsKeywords);
+        languageKeywords.put("html", htmlKeywords);
+        languageKeywords.put("css", cssKeywords);
+        languageKeywords.put("scss", cssKeywords);
+        languageKeywords.put("sass", cssKeywords);
+        languageKeywords.put("sql", sqlKeywords);
+
+        // 通用的编程语言操作符和分隔符
+        String[] commonOperators = {
+                "+", "-", "*", "/", "%", "=", "==", "!=", "<", ">", "<=", ">=",
+                "&&", "||", "!", "&", "|", "^", "~", "<<", ">>", "++", "--",
+                "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="
+        };
+
+        // 获取文件扩展名
+        String fileExtension = getFileExtension(code).toLowerCase();
+
+        // 添加对应语言的关键字特征
+        if (languageKeywords.containsKey(fileExtension)) {
+            String[] keywords = languageKeywords.get(fileExtension);
+            for (String keyword : keywords) {
+                Pattern pattern = Pattern.compile("\\b" + keyword + "\\b");
+                Matcher matcher = pattern.matcher(code);
+                if (matcher.find()) {
+                    features.add("KW_" + fileExtension + ":" + keyword);
+                }
+            }
+        }
+
+        // 添加通用操作符特征
+        for (String operator : commonOperators) {
+            if (code.contains(operator)) {
+                features.add("OP:" + operator);
+            }
+        }
+    }
+
+    /**
+     * 从代码内容推测文件扩展名
+     */
+    private static String getFileExtension(String code) {
+        // 基于代码特征判断语言类型
+        if (code.contains("public class") || code.contains("private class")) {
+            return "java";
+        } else if (code.contains("<!DOCTYPE html") || code.contains("<html")) {
+            return "html";
+        } else if (code.contains("#include") || code.contains("std::")) {
+            return "cpp";
+        } else if (code.contains("def ") || code.contains("import ") && code.contains(":")) {
+            return "py";
+        } else if (code.contains("function") || code.contains("const ") || code.contains("let ")) {
+            return "js";
+        } else if (code.contains("interface ") || code.contains("type ") || code.contains("namespace ")) {
+            return "ts";
+        } else if (code.contains("{") && code.contains("}") && (code.contains(";") || code.contains("px"))) {
+            return "css";
+        } else if (code.contains("SELECT ") || code.contains("CREATE TABLE")) {
+            return "sql";
+        }
+        return "unknown";
+    }
+
+    /**
+     * 计算Jaccard相似度
+     */
+    private static double calculateJaccardSimilarity(Set<String> set1, Set<String> set2) {
+        if (set1.isEmpty() && set2.isEmpty()) {
+            return 1.0;
+        }
+
+        Set<String> union = new HashSet<>(set1);
+        union.addAll(set2);
+
+        Set<String> intersection = new HashSet<>(set1);
+        intersection.retainAll(set2);
+
+        return (double) intersection.size() / union.size();
     }
 
     /**
      * 按文件扩展名过滤代码文件
      */
     private static Map<String, String> filterByExtension(Map<String, String> files, String extension) {
-        Map<String, String> filtered = new HashMap<>();
-        for (Map.Entry<String, String> entry : files.entrySet()) {
-            if (FilenameUtils.getExtension(entry.getKey()).equalsIgnoreCase(extension)) {
-                filtered.put(entry.getKey(), entry.getValue());
-            }
-        }
-        return filtered;
+        return files.entrySet().stream()
+                .filter(e -> FilenameUtils.getExtension(e.getKey()).equalsIgnoreCase(extension))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 
-    /**
-     * 获取所有文件扩展名
-     */
-    private static Set<String> getFileExtensions(Set<String> filenames) {
-        Set<String> extensions = new HashSet<>();
-        for (String filename : filenames) {
-            extensions.add(FilenameUtils.getExtension(filename).toLowerCase());
-        }
-        return extensions;
-    }
-
-    /**
-     * 计算特定类型代码文件的相似度
-     */
-    private static double calculateTypeCodeSimilarity(Map<String, String> files1, Map<String, String> files2) {
-        List<Double> similarities = new ArrayList<>();
-
-        for (Map.Entry<String, String> entry1 : files1.entrySet()) {
-            for (Map.Entry<String, String> entry2 : files2.entrySet()) {
-                // 使用多种算法计算代码相似度
-                double tokenSimilarity = calculateTokenSimilarity(entry1.getValue(), entry2.getValue());
-                double structureSimilarity = calculateStructureSimilarity(entry1.getValue(), entry2.getValue());
-
-                // 综合不同算法的结果
-                double similarity = tokenSimilarity * 0.7 + structureSimilarity * 0.3;
-                similarities.add(similarity);
-            }
-        }
-
-        // 返回最高相似度
-        return similarities.stream().mapToDouble(Double::doubleValue).max().orElse(0.0);
-    }
-
-    /**
-     * 计算代码token级别的相似度
-     */
-    private static double calculateTokenSimilarity(String code1, String code2) {
-        // 将代码转换为token序列
-        List<String> tokens1 = tokenizeCode(code1);
-        List<String> tokens2 = tokenizeCode(code2);
-
-        // 计算最长公共子序列
-        int lcs = calculateLCS(tokens1, tokens2);
-
-        // 计算相似度
-        return (2.0 * lcs) / (tokens1.size() + tokens2.size());
-    }
-
-    /**
-     * 计算代码结构相似度
-     */
-    private static double calculateStructureSimilarity(String code1, String code2) {
-        // 提取代码结构特征
-        Map<String, Integer> features1 = extractCodeFeatures(code1);
-        Map<String, Integer> features2 = extractCodeFeatures(code2);
-
-        // 计算特征向量的余弦相似度
-        return calculateCosineSimilarity(features1, features2);
-    }
-
-    /**
-     * 代码分词
-     */
-    private static List<String> tokenizeCode(String code) {
-        List<String> tokens = new ArrayList<>();
-        StringBuilder token = new StringBuilder();
-
-        for (char c : code.toCharArray()) {
-            if (Character.isLetterOrDigit(c)) {
-                token.append(c);
-            } else {
-                if (token.length() > 0) {
-                    tokens.add(token.toString());
-                    token = new StringBuilder();
-                }
-                if (!Character.isWhitespace(c)) {
-                    tokens.add(String.valueOf(c));
-                }
-            }
-        }
-
-        if (token.length() > 0) {
-            tokens.add(token.toString());
-        }
-
-        return tokens;
-    }
-
-    /**
-     * 提取代码结构特征
-     */
-    private static Map<String, Integer> extractCodeFeatures(String code) {
-        Map<String, Integer> features = new HashMap<>();
-
-        // 统计关键字
-        countKeywords(code, features);
-        // 统计操作符
-        countOperators(code, features);
-        // 统计控制结构
-        countControlStructures(code, features);
-
-        return features;
-    }
-
-    /**
-     * 计算最长公共子序列长度
-     */
-    private static int calculateLCS(List<String> tokens1, List<String> tokens2) {
-        int m = tokens1.size();
-        int n = tokens2.size();
-        int[][] dp = new int[m + 1][n + 1];
-
-        for (int i = 1; i <= m; i++) {
-            for (int j = 1; j <= n; j++) {
-                if (tokens1.get(i - 1).equals(tokens2.get(j - 1))) {
-                    dp[i][j] = dp[i - 1][j - 1] + 1;
-                } else {
-                    dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
-                }
-            }
-        }
-
-        return dp[m][n];
-    }
-
-    /**
-     * 计算加权平均相似度
-     */
-    private static double calculateWeightedSimilarity(Map<String, Double> typeSimilarities) {
-        Map<String, Double> weights = new HashMap<>();
-        weights.put("java", 1.0);
-        weights.put("cpp", 1.0);
-        weights.put("c", 1.0);
-        weights.put("py", 1.0);
-        weights.put("js", 0.8);
-        weights.put("html", 0.6);
-        weights.put("css", 0.6);
-        weights.put("sql", 0.7);
-
-        double totalWeight = 0.0;
-        double weightedSum = 0.0;
-
-        for (Map.Entry<String, Double> entry : typeSimilarities.entrySet()) {
-            String type = entry.getKey();
-            double similarity = entry.getValue();
-            double weight = weights.getOrDefault(type, 0.5);
-
-            weightedSum += similarity * weight;
-            totalWeight += weight;
-        }
-
-        return totalWeight == 0 ? 0 : weightedSum / totalWeight;
-    }
-
-    /**
-     * 读取压缩文件内容
-     */
-    private static String readContent(ZipArchiveInputStream zipIn) throws IOException {
-        StringBuilder content = new StringBuilder();
-        byte[] buffer = new byte[1024];
-        int bytesRead;
-        while ((bytesRead = zipIn.read(buffer)) != -1) {
-            content.append(new String(buffer, 0, bytesRead, "UTF-8"));
-        }
-        return content.toString();
-    }
-
-    /**
-     * 计算余弦相似度
-     */
-    private static double calculateCosineSimilarity(Map<String, Integer> vector1, Map<String, Integer> vector2) {
-        double dotProduct = 0.0;
-        double norm1 = 0.0;
-        double norm2 = 0.0;
-
-        // 计算点积和向量模长
-        for (String key : vector1.keySet()) {
-            int value1 = vector1.get(key);
-            Integer value2 = vector2.getOrDefault(key, 0);
-            dotProduct += value1 * value2;
-            norm1 += value1 * value1;
-        }
-
-        for (int value : vector2.values()) {
-            norm2 += value * value;
-        }
-
-        // 避免除以零
-        if (norm1 == 0 || norm2 == 0) {
-            return 0.0;
-        }
-
-        return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
-    }
-
-    /**
-     * 统计代码中的关键字
-     */
-    private static void countKeywords(String code, Map<String, Integer> features) {
-        // Java关键字列表
-        Set<String> javaKeywords = new HashSet<>(Arrays.asList(
-                "abstract", "assert", "boolean", "break", "byte", "case", "catch",
-                "char", "class", "const", "continue", "default", "do", "double",
-                "else", "enum", "extends", "final", "finally", "float", "for",
-                "goto", "if", "implements", "import", "instanceof", "int",
-                "interface", "long", "native", "new", "package", "private",
-                "protected", "public", "return", "short", "static", "strictfp",
-                "super", "switch", "synchronized", "this", "throw", "throws",
-                "transient", "try", "void", "volatile", "while"
-        ));
-
-        // C++关键字列表
-        Set<String> cppKeywords = new HashSet<>(Arrays.asList(
-                "auto", "break", "case", "char", "const", "continue", "default",
-                "do", "double", "else", "enum", "extern", "float", "for", "goto",
-                "if", "int", "long", "register", "return", "short", "signed",
-                "sizeof", "static", "struct", "switch", "typedef", "union",
-                "unsigned", "void", "volatile", "while", "class", "namespace",
-                "try", "catch", "throw", "template", "virtual", "inline", "public",
-                "private", "protected"
-        ));
-
-        // Python关键字列表
-        Set<String> pythonKeywords = new HashSet<>(Arrays.asList(
-                "False", "None", "True", "and", "as", "assert", "async", "await",
-                "break", "class", "continue", "def", "del", "elif", "else", "except",
-                "finally", "for", "from", "global", "if", "import", "in", "is",
-                "lambda", "nonlocal", "not", "or", "pass", "raise", "return",
-                "try", "while", "with", "yield"
-        ));
-
-        // 合并所有关键字
-        Set<String> allKeywords = new HashSet<>();
-        allKeywords.addAll(javaKeywords);
-        allKeywords.addAll(cppKeywords);
-        allKeywords.addAll(pythonKeywords);
-
-        // 统计关键字出现次数
-        for (String keyword : allKeywords) {
-            String pattern = "\\b" + keyword + "\\b";
-            java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
-            java.util.regex.Matcher m = p.matcher(code);
-            int count = 0;
-            while (m.find()) {
-                count++;
-            }
-            if (count > 0) {
-                features.put("keyword_" + keyword, count);
-            }
-        }
-    }
-
-    /**
-     * 统计代码中的操作符
-     */
-    private static void countOperators(String code, Map<String, Integer> features) {
-        // 算术运算符
-        Map<String, Pattern> arithmeticOperators = new HashMap<>();
-        arithmeticOperators.put("add", Pattern.compile("[^+]\\+[^+=]"));
-        arithmeticOperators.put("subtract", Pattern.compile("[^-]\\-[^-=]"));
-        arithmeticOperators.put("multiply", Pattern.compile("\\*[^=]"));
-        arithmeticOperators.put("divide", Pattern.compile("/[^=]"));
-        arithmeticOperators.put("modulo", Pattern.compile("%[^=]"));
-
-        // 比较运算符
-        Map<String, Pattern> comparisonOperators = new HashMap<>();
-        comparisonOperators.put("equal", Pattern.compile("=="));
-        comparisonOperators.put("not_equal", Pattern.compile("!="));
-        comparisonOperators.put("greater", Pattern.compile("[^>]>[^>=]"));
-        comparisonOperators.put("less", Pattern.compile("[^<]<[^<=]"));
-        comparisonOperators.put("greater_equal", Pattern.compile(">="));
-        comparisonOperators.put("less_equal", Pattern.compile("<="));
-
-        // 逻辑运算符
-        Map<String, Pattern> logicalOperators = new HashMap<>();
-        logicalOperators.put("and", Pattern.compile("&&"));
-        logicalOperators.put("or", Pattern.compile("\\|\\|"));
-        logicalOperators.put("not", Pattern.compile("![^=]"));
-
-        // 统计各类操作符
-        countOperatorsByType(code, features, arithmeticOperators, "arithmetic_");
-        countOperatorsByType(code, features, comparisonOperators, "comparison_");
-        countOperatorsByType(code, features, logicalOperators, "logical_");
-    }
-
-    /**
-     * 按类型统计操作符
-     */
-    private static void countOperatorsByType(String code, Map<String, Integer> features,
-                                             Map<String, Pattern> operators, String prefix) {
-        for (Map.Entry<String, Pattern> entry : operators.entrySet()) {
-            Matcher matcher = entry.getValue().matcher(code);
-            int count = 0;
-            while (matcher.find()) {
-                count++;
-            }
-            if (count > 0) {
-                features.put(prefix + entry.getKey(), count);
-            }
-        }
-    }
-
-    /**
-     * 统计控制结构
-     */
-    private static void countControlStructures(String code, Map<String, Integer> features) {
-        // 定义控制结构模式
-        Map<String, Pattern> controlPatterns = new HashMap<>();
-
-        // 循环结构
-        controlPatterns.put("for_loop", Pattern.compile("\\bfor\\s*\\("));
-        controlPatterns.put("while_loop", Pattern.compile("\\bwhile\\s*\\("));
-        controlPatterns.put("do_while", Pattern.compile("\\bdo\\s*\\{"));
-
-        // 条件结构
-        controlPatterns.put("if_statement", Pattern.compile("\\bif\\s*\\("));
-        controlPatterns.put("else_statement", Pattern.compile("\\belse\\s*[{]"));
-        controlPatterns.put("switch_statement", Pattern.compile("\\bswitch\\s*\\("));
-        controlPatterns.put("case_statement", Pattern.compile("\\bcase\\s+.+:"));
-
-        // 异常处理
-        controlPatterns.put("try_block", Pattern.compile("\\btry\\s*\\{"));
-        controlPatterns.put("catch_block", Pattern.compile("\\bcatch\\s*\\("));
-        controlPatterns.put("finally_block", Pattern.compile("\\bfinally\\s*\\{"));
-
-        // 函数定义
-        controlPatterns.put("function_definition", Pattern.compile(
-                "\\b(public|private|protected|static)?\\s*\\w+\\s+\\w+\\s*\\([^)]*\\)\\s*\\{"
-        ));
-
-        // 类定义
-        controlPatterns.put("class_definition", Pattern.compile(
-                "\\b(public|private|protected)?\\s*class\\s+\\w+\\s*(extends|implements)?\\s*\\w*\\s*\\{"
-        ));
-
-        // 统计各种控制结构的出现次数
-        for (Map.Entry<String, Pattern> entry : controlPatterns.entrySet()) {
-            Matcher matcher = entry.getValue().matcher(code);
-            int count = 0;
-            while (matcher.find()) {
-                count++;
-            }
-            if (count > 0) {
-                features.put("structure_" + entry.getKey(), count);
-            }
-        }
-
-        // 统计代码块嵌套深度
-        int maxNestingDepth = calculateNestingDepth(code);
-        features.put("max_nesting_depth", maxNestingDepth);
-    }
-
-    /**
-     * 计算代码嵌套深度
-     */
-    private static int calculateNestingDepth(String code) {
-        int currentDepth = 0;
-        int maxDepth = 0;
-
-        for (char c : code.toCharArray()) {
-            if (c == '{') {
-                currentDepth++;
-                maxDepth = Math.max(maxDepth, currentDepth);
-            } else if (c == '}') {
-                currentDepth = Math.max(0, currentDepth - 1);
-            }
-        }
-
-        return maxDepth;
-    }
+//    /**
+//     * 读取压缩文件内容
+//     */
+//    private static String readContent(ZipArchiveInputStream zipIn) throws IOException {
+//        StringBuilder content = new StringBuilder();
+//        byte[] buffer = new byte[4096];
+//        int bytesRead;
+//
+//        while ((bytesRead = zipIn.read(buffer)) != -1) {
+//            content.append(new String(buffer, 0, bytesRead, "UTF-8"));
+//        }
+//
+//        return content.toString();
+//    }
 }

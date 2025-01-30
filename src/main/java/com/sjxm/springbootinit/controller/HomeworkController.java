@@ -1,6 +1,5 @@
 package com.sjxm.springbootinit.controller;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sjxm.springbootinit.annotation.AuthCheck;
 import com.sjxm.springbootinit.biz.GradeBiz;
@@ -8,10 +7,10 @@ import com.sjxm.springbootinit.biz.HomeworkBiz;
 import com.sjxm.springbootinit.common.BaseResponse;
 import com.sjxm.springbootinit.common.ErrorCode;
 import com.sjxm.springbootinit.common.ResultUtils;
+import com.sjxm.springbootinit.constant.StudentProfileConstant;
 import com.sjxm.springbootinit.constant.UserConstant;
 import com.sjxm.springbootinit.exception.BusinessException;
 import com.sjxm.springbootinit.model.dto.homework.*;
-import com.sjxm.springbootinit.model.entity.Grade;
 import com.sjxm.springbootinit.model.entity.Homework;
 import com.sjxm.springbootinit.model.vo.HomeworkGradeVO;
 import com.sjxm.springbootinit.model.vo.HomeworkHistoryVO;
@@ -21,7 +20,7 @@ import org.springframework.web.bind.annotation.*;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.io.IOException;
+import javax.validation.Valid;
 import java.util.List;
 
 /**
@@ -36,12 +35,10 @@ public class HomeworkController {
     @Resource
     private HomeworkBiz homeworkBiz;
 
-    @Resource
-    private GradeBiz gradeBiz;
 
-    @AuthCheck(mustRole = UserConstant.STUDENT_ROLE)
+    @AuthCheck(mustRole = UserConstant.STUDENT_ROLE,needProfile = StudentProfileConstant.STUDENT_UPLOAD)
     @PostMapping("/submit")
-    public BaseResponse<Boolean> submitHomework(@RequestBody HomeworkAddRequest request){
+    public BaseResponse<Boolean> submitHomework(@RequestBody @Valid HomeworkAddRequest request){
         if(request==null){
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
@@ -61,7 +58,7 @@ public class HomeworkController {
 
     @PostMapping("/update-status")
     @AuthCheck(mustRole = UserConstant.TEACHER_ROLE)
-    public BaseResponse<Boolean> updateHomeworkStatus(@RequestBody HomeworkStatusUpdateRequest homeworkStatusUpdateRequest){
+    public BaseResponse<Boolean> updateHomeworkStatus(@RequestBody @Valid HomeworkStatusUpdateRequest homeworkStatusUpdateRequest){
         if(homeworkStatusUpdateRequest==null){
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
@@ -84,6 +81,7 @@ public class HomeworkController {
     }
 
     @PostMapping("/page-homework-history")
+    @AuthCheck(needProfile = StudentProfileConstant.STUDENT_CHECK)
     public BaseResponse<Page<HomeworkHistoryVO>> getHomeworkHistoryPage(@RequestBody HomeworkHistoryPageQueryRequest homeworkHistoryPageQueryRequest, HttpServletRequest request){
         if(homeworkHistoryPageQueryRequest==null){
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
@@ -93,6 +91,7 @@ public class HomeworkController {
     }
 
     @GetMapping("/get")
+    @AuthCheck(needProfile = StudentProfileConstant.STUDENT_UPLOAD)
     public BaseResponse<Homework> getHomeworkDetail(Long homeworkId,HttpServletRequest request){
         Homework homework = homeworkBiz.getHomeworkDetail(homeworkId,request);
         return ResultUtils.success(homework);

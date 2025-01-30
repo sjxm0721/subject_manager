@@ -1,5 +1,11 @@
 package com.sjxm.springbootinit.controller;
 
+import cloud.tianai.captcha.application.ImageCaptchaApplication;
+import cloud.tianai.captcha.application.vo.CaptchaResponse;
+import cloud.tianai.captcha.application.vo.ImageCaptchaVO;
+import cloud.tianai.captcha.common.constant.CaptchaTypeConstant;
+import cloud.tianai.captcha.common.response.ApiResponse;
+import cloud.tianai.captcha.generator.impl.StandardConcatImageCaptchaGenerator;
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -20,9 +26,11 @@ import com.sjxm.springbootinit.model.vo.UserVO;
 import com.sjxm.springbootinit.properties.JwtProperties;
 import com.sjxm.springbootinit.service.UserService;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -36,11 +44,7 @@ import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.util.DigestUtils;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import static com.sjxm.springbootinit.service.impl.UserServiceImpl.SALT;
 
@@ -60,6 +64,9 @@ public class UserController {
 
     @Resource
     private JwtProperties jwtProperties;
+
+    @Resource
+    private ImageCaptchaApplication imageCaptchaApplication;
 
     // region 登录相关
 
@@ -124,6 +131,39 @@ public class UserController {
         return ResultUtils.success(userService.getLoginUserVO(loginUser));
     }
 
+
+    @RequestMapping("/gen")
+    public CaptchaResponse<ImageCaptchaVO> genCaptcha(HttpServletRequest request, @RequestParam(value = "type", required = false)String type) {
+        if (StringUtils.isBlank(type)) {
+            type = CaptchaTypeConstant.SLIDER;
+        }
+        if ("RANDOM".equals(type)) {
+            int i = ThreadLocalRandom.current().nextInt(0, 4);
+            if (i == 0) {
+                type = CaptchaTypeConstant.SLIDER;
+            } else if (i == 1) {
+                type = CaptchaTypeConstant.CONCAT;
+            } else if (i == 2) {
+                type = CaptchaTypeConstant.ROTATE;
+            } else{
+                type = CaptchaTypeConstant.WORD_IMAGE_CLICK;
+            }
+
+        }
+        return imageCaptchaApplication.generateCaptcha(type);
+    }
+    @PostMapping("/check")
+    public ApiResponse<?> checkCaptcha(@RequestBody UserImageCaptchaRequest data,
+                                       HttpServletRequest request) {
+        ApiResponse<?> response = imageCaptchaApplication.matching(data.getId(), data.getData());
+        if (response.isSuccess()) {
+            return ApiResponse.ofSuccess(Collections.singletonMap("id", data.getId()));
+        }
+        return response;
+    }
+
+
+
     /**
      * 用户登录（微信开放平台）
      */
@@ -180,7 +220,7 @@ public class UserController {
         User user = new User();
         BeanUtils.copyProperties(userAddRequest, user);
         // 默认密码 12345678
-        String defaultPassword = "12345678";
+        String defaultPassword = "123456";
         String encryptPassword = DigestUtils.md5DigestAsHex((SALT + defaultPassword).getBytes());
         user.setUserPassword(encryptPassword);
         boolean result = userService.save(user);
@@ -332,16 +372,17 @@ public class UserController {
             throw new BusinessException(ErrorCode.NOT_LOGIN_ERROR);
         }
         String newPwd = userPwdChangeRequest.getNewPwd();
-        String userPassword = loginUser.getUserPassword();
         if(StrUtil.isBlankIfStr(newPwd)){
             throw new BusinessException(ErrorCode.OPERATION_ERROR,"密码不能为空");
         }
-        else if(newPwd.equals(userPassword)){
+        String newEncryptPassword = DigestUtils.md5DigestAsHex((SALT + newPwd).getBytes());
+        String userPassword = loginUser.getUserPassword();
+        if(newEncryptPassword.equals(userPassword)){
             throw new BusinessException(ErrorCode.OPERATION_ERROR,"新密码不能与旧密码相同");
         }
         else{
             LambdaUpdateWrapper<User> lambdaUpdateWrapper = new LambdaUpdateWrapper<>();
-            lambdaUpdateWrapper.set(User::getUserPassword,newPwd).eq(User::getId,loginUser.getId());
+            lambdaUpdateWrapper.set(User::getUserPassword,newEncryptPassword).eq(User::getId,loginUser.getId());
             userService.update(lambdaUpdateWrapper);
         }
         return ResultUtils.success(true);

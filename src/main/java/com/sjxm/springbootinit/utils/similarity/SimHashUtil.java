@@ -6,21 +6,28 @@ package com.sjxm.springbootinit.utils.similarity;
  * @Description:
  */
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.IOUtils;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.poi.hwpf.HWPFDocument;
+import org.apache.poi.hwpf.extractor.WordExtractor;
 import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import com.hankcs.hanlp.HanLP;
 import com.hankcs.hanlp.seg.common.Term;
 import cn.hutool.core.util.StrUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.math.BigInteger;
 import java.net.URL;
 import java.util.*;
 
-@Slf4j
 public class SimHashUtil {
+
+    private static final Logger logger = LoggerFactory.getLogger(SimHashUtil.class);
+
     private static final int HASH_BITS = 64;
     private static final int WINDOW_SIZE = 3;
 
@@ -32,38 +39,57 @@ public class SimHashUtil {
      * @return 两组文档的最大相似度
      */
     public static double calculateGroupSimilarity(String ossUrls1, String ossUrls2, String fileType) throws Exception {
-        if (StrUtil.isBlank(ossUrls1) || StrUtil.isBlank(ossUrls2)) {
-            return 0.0;
-        }
+        try {
+            logger.info("开始计算文档组相似度: ossUrls1长度={}, ossUrls2长度={}, fileType={}",
+                    ossUrls1 != null ? ossUrls1.length() : 0,
+                    ossUrls2 != null ? ossUrls2.length() : 0,
+                    fileType);
 
-        String[] urls1 = ossUrls1.split(",");
-        String[] urls2 = ossUrls2.split(",");
-
-        double maxSimilarity = 0.0;
-
-        // 计算两组文档中任意两个文档的相似度，取最大值
-        for (String url1 : urls1) {
-            url1 = url1.trim();
-            if (!url1.startsWith("http")) {
-                continue;
+            if (StrUtil.isBlank(ossUrls1) || StrUtil.isBlank(ossUrls2)) {
+                logger.warn("文档URL为空, 返回0");
+                return 0.0;
             }
 
-            for (String url2 : urls2) {
-                url2 = url2.trim();
-                if (!url2.startsWith("http")) {
+            String[] urls1 = ossUrls1.split(",");
+            String[] urls2 = ossUrls2.split(",");
+            logger.debug("文档数量: urls1={}, urls2={}", urls1.length, urls2.length);
+
+            double maxSimilarity = 0.0;
+            int comparisonCount = 0;
+
+            for (String url1 : urls1) {
+                url1 = url1.trim();
+                if (!url1.startsWith("http")) {
+                    logger.warn("跳过非HTTP URL: {}", url1);
                     continue;
                 }
 
-                try {
-                    double similarity = calculateSimilarity(url1, url2, fileType);
-                    maxSimilarity = Math.max(maxSimilarity, similarity);
-                } catch (Exception e) {
-                    log.error("计算文档相似度失败: {} - {}", url1, url2, e);
+                for (String url2 : urls2) {
+                    url2 = url2.trim();
+                    if (!url2.startsWith("http")) {
+                        logger.warn("跳过非HTTP URL: {}", url2);
+                        continue;
+                    }
+
+                    try {
+                        logger.debug("开始比较文档: url1={}, url2={}", url1, url2);
+                        double similarity = calculateSimilarity(url1, url2, fileType);
+                        maxSimilarity = Math.max(maxSimilarity, similarity);
+                        comparisonCount++;
+                        logger.debug("文档比较结果: similarity={}", similarity);
+                    } catch (Exception e) {
+                        logger.error("计算单个文档对相似度失败: url1={}, url2={}", url1, url2, e);
+                    }
                 }
             }
-        }
 
-        return maxSimilarity;
+            logger.info("文档组相似度计算完成: maxSimilarity={}, 比较次数={}",
+                    maxSimilarity, comparisonCount);
+            return maxSimilarity;
+        } catch (Exception e) {
+            logger.error("计算文档组相似度失败", e);
+            throw e;
+        }
     }
 
     /**
@@ -108,9 +134,31 @@ public class SimHashUtil {
      * 从输入流中提取Word内容
      */
     private static String extractWordContent(InputStream inputStream) throws IOException {
-        try (XWPFDocument document = new XWPFDocument(inputStream)) {
-            XWPFWordExtractor extractor = new XWPFWordExtractor(document);
-            return extractor.getText();
+        // 先将输入流内容保存到字节数组，这样可以多次使用
+        byte[] bytes = IOUtils.toByteArray(inputStream);
+
+        // 先尝试作为 DOCX 处理
+        try (InputStream is1 = new ByteArrayInputStream(bytes)) {
+            XWPFDocument document = new XWPFDocument(is1);
+            try (XWPFWordExtractor extractor = new XWPFWordExtractor(document)) {
+                return extractor.getText();
+            }
+        } catch (Exception e) {
+            // 如果失败，尝试作为 DOC 处理
+            try (InputStream is2 = new ByteArrayInputStream(bytes)) {
+                HWPFDocument document = new HWPFDocument(is2);
+                try (WordExtractor extractor = new WordExtractor(document)) {
+                    String text = extractor.getText();
+                    // 如果文本为空，尝试使用替代方法
+                    if (text.trim().isEmpty()) {
+                        text = document.getDocumentText();
+                    }
+                    return text;
+                }
+            } catch (Exception e2) {
+                logger.error("提取Word文档内容失败", e2);
+                throw new IOException("无法读取Word文档内容");
+            }
         }
     }
 

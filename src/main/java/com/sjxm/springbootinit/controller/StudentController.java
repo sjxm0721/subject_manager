@@ -1,9 +1,5 @@
 package com.sjxm.springbootinit.controller;
 
-import cn.hutool.core.bean.BeanUtil;
-import cn.hutool.core.util.ObjectUtil;
-import cn.hutool.core.util.StrUtil;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sjxm.springbootinit.annotation.AuthCheck;
 import com.sjxm.springbootinit.biz.StudentBiz;
@@ -15,25 +11,14 @@ import com.sjxm.springbootinit.exception.BusinessException;
 import com.sjxm.springbootinit.model.dto.student.StudentAddOrUpdateRequest;
 import com.sjxm.springbootinit.model.dto.student.StudentGroupNumQueryRequest;
 import com.sjxm.springbootinit.model.dto.student.StudentQueryRequest;
-import com.sjxm.springbootinit.model.entity.Subject;
-import com.sjxm.springbootinit.model.entity.SubjectStudent;
-import com.sjxm.springbootinit.model.entity.User;
-import com.sjxm.springbootinit.model.enums.UserRoleEnum;
 import com.sjxm.springbootinit.model.vo.StudentVO;
-import com.sjxm.springbootinit.service.SubjectService;
-import com.sjxm.springbootinit.service.SubjectStudentService;
-import com.sjxm.springbootinit.service.UserService;
-import org.checkerframework.checker.units.qual.A;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import javax.validation.Valid;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * @Author: 四季夏目
@@ -63,7 +48,7 @@ public class StudentController {
 
     @PostMapping("/add-update")
     @AuthCheck(mustRole = UserConstant.TEACHER_ROLE)
-    public BaseResponse<Boolean> addOrUpdateStudent(@RequestBody StudentAddOrUpdateRequest studentAddOrUpdateRequest,HttpServletRequest request){
+    public BaseResponse<Boolean> addOrUpdateStudent(@RequestBody @Valid StudentAddOrUpdateRequest studentAddOrUpdateRequest, HttpServletRequest request){
         if(studentAddOrUpdateRequest==null){
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
@@ -81,7 +66,7 @@ public class StudentController {
 
     @PostMapping("/group-num")
     @AuthCheck(mustRole = UserConstant.STUDENT_ROLE)
-    public BaseResponse<Integer> getGroupNum(@RequestBody StudentGroupNumQueryRequest request){
+    public BaseResponse<Integer> getGroupNum(@RequestBody @Valid StudentGroupNumQueryRequest request){
         int groupNum = studentBiz.getGroupNum(request);
         return ResultUtils.success(groupNum);
     }

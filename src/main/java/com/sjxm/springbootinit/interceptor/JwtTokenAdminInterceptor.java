@@ -5,6 +5,8 @@ import com.sjxm.springbootinit.properties.JwtProperties;
 import com.sjxm.springbootinit.utils.JwtUtil;
 import io.jsonwebtoken.Claims;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.method.HandlerMethod;
@@ -25,8 +27,9 @@ import javax.servlet.http.HttpServletResponse;
 
 
 @Component
-@Slf4j
 public class JwtTokenAdminInterceptor implements HandlerInterceptor {
+
+    private static final Logger logger = LoggerFactory.getLogger(JwtTokenAdminInterceptor.class);
 
     @Autowired
     private JwtProperties jwtProperties;
@@ -52,10 +55,10 @@ public class JwtTokenAdminInterceptor implements HandlerInterceptor {
 
         //2、校验令牌
         try {
-            log.info("jwt校验:{}", token);
+            logger.info("jwt校验:{}", token);
             Claims claims = JwtUtil.parseJWT(jwtProperties.getAdminSecretKey(), token);
             Long id = (Long)claims.get("id");
-            log.info("当前使用者id{}", id);
+            logger.info("当前使用者id{}", id);
             BaseContext.setCurrentId(id);
             //3、通过，放行
             return true;

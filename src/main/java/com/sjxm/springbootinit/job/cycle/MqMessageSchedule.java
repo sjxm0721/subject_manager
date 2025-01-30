@@ -10,6 +10,8 @@ import org.apache.rocketmq.client.producer.SendCallback;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.apache.rocketmq.spring.support.RocketMQHeaders;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -26,8 +28,9 @@ import java.util.List;
  * @Description:
  */
 @Component
-@Slf4j
 public class MqMessageSchedule {
+
+    private static final Logger logger = LoggerFactory.getLogger(MqMessageSchedule.class);
 
     @Resource
     private MqMessageService mqMessageService;
@@ -53,7 +56,7 @@ public class MqMessageSchedule {
             return;
         }
 
-        log.info("开始处理失败消息，消息数量：{}", failedMessages.size());
+        logger.info("开始处理失败消息，消息数量：{}", failedMessages.size());
 
         for (MqMessage message : failedMessages) {
             try {
@@ -81,7 +84,7 @@ public class MqMessageSchedule {
                         message.setMsgId(sendResult.getMsgId());
                         mqMessageService.updateById(message);
 
-                        log.info("失败消息重试发送成功，messageId={}, retryTimes={}",
+                        logger.info("失败消息重试发送成功，messageId={}, retryTimes={}",
                                 message.getId(), message.getRetryTimes());
                     }
 
@@ -93,7 +96,7 @@ public class MqMessageSchedule {
                 });
 
             } catch (Exception e) {
-                log.error("处理失败消息异常，messageId=" + message.getId(), e);
+                logger.error("处理失败消息异常，messageId=" + message.getId(), e);
                 handleRetryFailure(message, e);
             }
         }
@@ -116,7 +119,7 @@ public class MqMessageSchedule {
 
             mqMessageService.updateById(message);
         } catch (Exception e) {
-            log.error("更新消息状态失败，messageId=" + message.getId(), e);
+            logger.error("更新消息状态失败，messageId=" + message.getId(), e);
         }
     }
 
@@ -138,7 +141,7 @@ public class MqMessageSchedule {
                 message.getErrorMsg()
         );
 
-        log.error(alertMessage);
+        logger.error(alertMessage);
     }
 
     @Scheduled(cron = "0 0 1 * * ?") // 每天凌晨1点执行

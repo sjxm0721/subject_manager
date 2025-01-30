@@ -1,10 +1,12 @@
 package com.sjxm.springbootinit.controller;
 
 import cn.hutool.core.io.FileUtil;
+import com.sjxm.springbootinit.annotation.AuthCheck;
 import com.sjxm.springbootinit.common.BaseResponse;
 import com.sjxm.springbootinit.common.ErrorCode;
 import com.sjxm.springbootinit.common.ResultUtils;
 import com.sjxm.springbootinit.constant.FileConstant;
+import com.sjxm.springbootinit.constant.StudentProfileConstant;
 import com.sjxm.springbootinit.exception.BusinessException;
 import com.sjxm.springbootinit.manager.CosManager;
 import com.sjxm.springbootinit.model.dto.file.UploadFileRequest;
@@ -17,6 +19,8 @@ import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomStringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -31,8 +35,9 @@ import org.springframework.web.multipart.MultipartFile;
  */
 @RestController
 @RequestMapping("/file")
-@Slf4j
 public class FileController {
+
+    private static final Logger logger = LoggerFactory.getLogger(FileController.class);
 
     @Resource
     private UserService userService;
@@ -49,6 +54,7 @@ public class FileController {
      * @return
      */
     @PostMapping("/upload")
+    @AuthCheck(needProfile = StudentProfileConstant.STUDENT_UPLOAD)
     public BaseResponse<String> uploadFile(@RequestPart("file") MultipartFile multipartFile,
             UploadFileRequest uploadFileRequest, HttpServletRequest request) {
         String biz = uploadFileRequest.getBiz();
@@ -71,14 +77,14 @@ public class FileController {
             // 返回可访问地址
             return ResultUtils.success(FileConstant.COS_HOST + filepath);
         } catch (Exception e) {
-            log.error("file upload error, filepath = " + filepath, e);
+            logger.error("file upload error, filepath = " + filepath, e);
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "上传失败");
         } finally {
             if (file != null) {
                 // 删除临时文件
                 boolean delete = file.delete();
                 if (!delete) {
-                    log.error("file delete error, filepath = {}", filepath);
+                    logger.error("file delete error, filepath = {}", filepath);
                 }
             }
         }

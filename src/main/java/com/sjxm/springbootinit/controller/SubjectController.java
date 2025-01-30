@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import javax.validation.Valid;
 import java.util.List;
 
 /**
@@ -60,7 +61,7 @@ public class SubjectController {
 
     @PostMapping("/add-or-update")
     @AuthCheck(mustRole = UserConstant.TEACHER_ROLE)
-    public BaseResponse<Boolean> addOrUpdateSubject(@RequestBody SubjectAddOrUpdateRequest subjectAddOrUpdateRequest,HttpServletRequest request){
+    public BaseResponse<Boolean> addOrUpdateSubject(@RequestBody @Valid SubjectAddOrUpdateRequest subjectAddOrUpdateRequest, HttpServletRequest request){
         if(subjectAddOrUpdateRequest==null){
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
