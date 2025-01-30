@@ -1,7 +1,5 @@
 package com.sjxm.springbootinit.controller;
 
-import co.elastic.clients.elasticsearch.xpack.usage.Base;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sjxm.springbootinit.annotation.AuthCheck;
 import com.sjxm.springbootinit.biz.SubjectBiz;
@@ -13,9 +11,6 @@ import com.sjxm.springbootinit.exception.BusinessException;
 import com.sjxm.springbootinit.model.dto.subject.SubjectAddOrUpdateRequest;
 import com.sjxm.springbootinit.model.dto.subject.SubjectPageRequest;
 import com.sjxm.springbootinit.model.entity.Subject;
-import com.sjxm.springbootinit.model.entity.User;
-import com.sjxm.springbootinit.service.SubjectService;
-import com.sjxm.springbootinit.service.UserService;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;

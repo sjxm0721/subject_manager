@@ -24,7 +24,7 @@ public class ConsineSimilarityUtil {
             Map<String, Integer> vector1 = getTermFrequencyMap(text1);
             Map<String, Integer> vector2 = getTermFrequencyMap(text2);
 
-            logger.debug("向量1大小={}, 向量2大小={}", vector1.size(), vector2.size());
+            logger.info("向量1大小={}, 向量2大小={}", vector1.size(), vector2.size());
 
             double dotProduct = 0.0;
             for (String term : vector1.keySet()) {
@@ -60,7 +60,7 @@ public class ConsineSimilarityUtil {
         try {
             Map<String, Integer> termFreqMap = new HashMap<>();
             String[] terms = text.split("\\s+");
-            logger.debug("分词结果: terms数量={}", terms.length);
+            logger.info("分词结果: terms数量={}", terms.length);
 
             for (String term : terms) {
                 termFreqMap.merge(term, 1, Integer::sum);

@@ -117,6 +117,9 @@ public class Homework implements Serializable {
 
     private Integer checkStatus;
 
+    @Version
+    private Integer version;
+
 
     @TableField(exist = false)
     private static final long serialVersionUID = 1L;

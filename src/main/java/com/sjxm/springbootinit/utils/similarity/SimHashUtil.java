@@ -52,7 +52,7 @@ public class SimHashUtil {
 
             String[] urls1 = ossUrls1.split(",");
             String[] urls2 = ossUrls2.split(",");
-            logger.debug("文档数量: urls1={}, urls2={}", urls1.length, urls2.length);
+            logger.info("文档数量: urls1={}, urls2={}", urls1.length, urls2.length);
 
             double maxSimilarity = 0.0;
             int comparisonCount = 0;
@@ -72,11 +72,11 @@ public class SimHashUtil {
                     }
 
                     try {
-                        logger.debug("开始比较文档: url1={}, url2={}", url1, url2);
+                        logger.info("开始比较文档: url1={}, url2={}", url1, url2);
                         double similarity = calculateSimilarity(url1, url2, fileType);
                         maxSimilarity = Math.max(maxSimilarity, similarity);
                         comparisonCount++;
-                        logger.debug("文档比较结果: similarity={}", similarity);
+                        logger.info("文档比较结果: similarity={}", similarity);
                     } catch (Exception e) {
                         logger.error("计算单个文档对相似度失败: url1={}, url2={}", url1, url2, e);
                     }

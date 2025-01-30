@@ -48,7 +48,7 @@ public class CodeSimilarityUtil {
 
             Map<String, String> files1 = extractCodeFiles(sourceUrls1);
             Map<String, String> files2 = extractCodeFiles(sourceUrls2);
-            logger.debug("代码文件数量: files1={}, files2={}", files1.size(), files2.size());
+            logger.info("代码文件数量: files1={}, files2={}", files1.size(), files2.size());
 
             if (files1.isEmpty() || files2.isEmpty()) {
                 logger.warn("代码文件为空, 返回0");
@@ -61,7 +61,7 @@ public class CodeSimilarityUtil {
             for (String ext : CODE_EXTENSIONS) {
                 Map<String, String> typeFiles1 = filterByExtension(files1, ext);
                 Map<String, String> typeFiles2 = filterByExtension(files2, ext);
-                logger.debug("文件类型[{}]数量: files1={}, files2={}",
+                logger.info("文件类型[{}]数量: files1={}, files2={}",
                         ext, typeFiles1.size(), typeFiles2.size());
 
                 if (!typeFiles1.isEmpty() && !typeFiles2.isEmpty()) {
@@ -69,7 +69,7 @@ public class CodeSimilarityUtil {
                     int weight = Math.max(typeFiles1.size(), typeFiles2.size());
                     totalSimilarity += similarity * weight;
                     totalFiles += weight;
-                    logger.debug("文件类型[{}]相似度: similarity={}, weight={}",
+                    logger.info("文件类型[{}]相似度: similarity={}, weight={}",
                             ext, similarity, weight);
                 }
             }
