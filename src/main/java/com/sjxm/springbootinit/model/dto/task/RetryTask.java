@@ -16,7 +16,7 @@ public class RetryTask implements Delayed {
     private Long messageId;
     private long startTime = System.currentTimeMillis();  // 添加 startTime
     private int retryCount = 0;
-    private static final long RETRY_INTERVAL = 5000; // 基础重试间隔（5秒）
+    private static final long RETRY_INTERVAL = 60000; // 基础重试间隔（5秒）
     private static final int MAX_RETRY_COUNT = 3; // 最大重试次数
 
     public RetryTask(Long homeworkId, Long messageId) {

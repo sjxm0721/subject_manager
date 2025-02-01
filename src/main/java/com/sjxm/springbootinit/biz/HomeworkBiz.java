@@ -29,6 +29,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.Resource;
@@ -93,88 +94,119 @@ public class HomeworkBiz {
     @Resource
     private DuplicateCheckService duplicateCheckService;
 
-    @PostConstruct
-    public void init() {
-        Thread retryThread = new Thread(() -> {
-            while (!Thread.currentThread().isInterrupted()) {
-                try {
-                    RetryTask task = retryQueue.take();
-                    if (task != null) {
-                        asyncDuplicateCheck(task.getHomeworkId(), task.getMessageId());
-                    }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-            }
-        });
-        retryThread.setName("duplicate-check-retry");
-        retryThread.setDaemon(true);
-        retryThread.start();
-    }
+    @Resource
+    private TransactionTemplate transactionTemplate;
+
+//    @PostConstruct
+//    public void init() {
+//        Thread retryThread = new Thread(() -> {
+//            while (!Thread.currentThread().isInterrupted()) {
+//                try {
+//                    RetryTask task = retryQueue.take();
+//                    if (task != null) {
+//                        asyncDuplicateCheck(task.getHomeworkId(), task.getMessageId());
+//                    }
+//                } catch (InterruptedException e) {
+//                    Thread.currentThread().interrupt();
+//                }
+//            }
+//        });
+//        retryThread.setName("duplicate-check-retry");
+//        retryThread.setDaemon(true);
+//        retryThread.start();
+//    }
 
 
 
 
-    @Scheduled(fixedRate = 60000) // 每分钟执行一次
+    @Scheduled(fixedRate = 120000) // 每分钟执行一次
     @Transactional(rollbackFor = Exception.class)
     public void processFailedTasks() {
-        MqMessage mqMessage = null;
-        try {
-            RetryTask task = retryQueue.peek();
-            if (task == null || !task.canRetry()) {
-                return;
-            }
-
-            // 检查消息状态
-            mqMessage = mqMessageService.getById(task.getMessageId());
-            if (mqMessage == null || !mqMessage.getStatus().equals(CheckStatusEnum.WAITING.getCode())) {
-                retryQueue.remove(task);
-                return;
-            }
-
-            // 更新重试次数和状态
-            mqMessage.setRetryTimes(task.getRetryCount());
-            mqMessage.setStatus(CheckStatusEnum.PROCESSING.getCode());
-            mqMessageService.updateById(mqMessage);
-
-            // 执行查重
-            duplicateCheckService.getSimilarity(task.getHomeworkId());
-
-            // 更新状态为完成
-            mqMessage.setStatus(CheckStatusEnum.COMPLETED.getCode());
-            mqMessageService.updateById(mqMessage);
-
-            // 移除成功的任务
-            retryQueue.remove(task);
-
-        } catch (Exception e) {
-            logger.error("重试任务处理失败", e);
-            if (mqMessage != null) {
-                handleRetryFailure(mqMessage);
-            }
-        }
-    }
-
-    private void handleRetryFailure(MqMessage mqMessage) {
-        try {
-            RetryTask currentTask = retryQueue.peek();
-            if (currentTask != null && currentTask.canRetry()) {
-                currentTask.incrementRetryCount();
-                mqMessage.setStatus(CheckStatusEnum.WAITING.getCode());
-                mqMessage.setNextRetryTime(LocalDateTime.now().plusSeconds(5));
-            } else {
-                mqMessage.setStatus(CheckStatusEnum.FAILED.getCode());
-                if (currentTask != null) {
-                    retryQueue.remove(currentTask);
+        int maxTasksPerRun = 3;
+        int processedTasks = 0;
+        while(processedTasks<maxTasksPerRun){
+            MqMessage mqMessage = null;
+            try{
+                RetryTask task = retryQueue.poll();
+                if (task == null) {
+                    return;
                 }
-                // 发送告警通知
-                sendAlert(mqMessage);
+                processedTasks++;
+
+                // 检查消息状态
+                mqMessage = mqMessageService.getById(task.getMessageId());
+                if (mqMessage == null || !mqMessage.getStatus().equals(CheckStatusEnum.WAITING.getCode())) {
+                    retryQueue.remove(task);
+                    return;
+                }
+
+                if(!task.canRetry()){
+                    mqMessage.setStatus(CheckStatusEnum.FAILED.getCode());
+                    mqMessage.setRetryTimes(task.getRetryCount());
+                    mqMessageService.updateById(mqMessage);
+                    updateHomeworkCheckStatus(task.getHomeworkId(), CheckStatusEnum.FAILED);
+                    sendAlert(mqMessage);
+                    continue;
+                }
+
+                task.incrementRetryCount();
+
+                // 更新重试次数和状态
+                mqMessage.setRetryTimes(task.getRetryCount());
+                mqMessage.setStatus(CheckStatusEnum.PROCESSING.getCode());
+                mqMessageService.updateById(mqMessage);
+                updateHomeworkCheckStatus(task.getHomeworkId(), CheckStatusEnum.PROCESSING);
+
+                // 执行查重
+                try{
+                    duplicateCheckService.getSimilarity(task.getHomeworkId());
+
+                    // 更新状态为完成
+                    mqMessage.setStatus(CheckStatusEnum.COMPLETED.getCode());
+                    mqMessageService.updateById(mqMessage);
+                    updateHomeworkCheckStatus(task.getHomeworkId(), CheckStatusEnum.COMPLETED);
+                }catch (Exception e){
+                    logger.error("重试任务执行失败", e);
+                    mqMessage.setStatus(CheckStatusEnum.WAITING.getCode());
+                    mqMessage.setNextRetryTime(LocalDateTime.now().plusMinutes(1));
+                    mqMessageService.updateById(mqMessage);
+                    updateHomeworkCheckStatus(task.getHomeworkId(), CheckStatusEnum.WAITING);
+                    retryQueue.offer(task);
+                }
+
+            }catch (Exception e) {
+                logger.error("重试任务处理失败", e);
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
-            mqMessageService.updateById(mqMessage);
-        } catch (Exception e) {
-            logger.error("处理重试失败异常", e);
         }
+
     }
+
+//    private void handleRetryFailure(MqMessage mqMessage) {
+//        try {
+//            RetryTask currentTask = retryQueue.peek();
+//            if (currentTask != null && currentTask.canRetry()) {
+//                currentTask.incrementRetryCount();
+//                mqMessage.setStatus(CheckStatusEnum.WAITING.getCode());
+//                mqMessage.setNextRetryTime(LocalDateTime.now().plusSeconds(5));
+//            } else {
+//                mqMessage.setStatus(CheckStatusEnum.FAILED.getCode());
+//                if (currentTask != null) {
+//                    retryQueue.remove(currentTask);
+//                }
+//                // 发送告警通知
+//                sendAlert(mqMessage);
+//            }
+//            mqMessageService.updateById(mqMessage);
+//        } catch (Exception e) {
+//            logger.error("处理重试失败异常", e);
+//        }
+//    }
 
     private void sendAlert(MqMessage message) {
         String alertMessage = String.format(
@@ -303,102 +335,120 @@ public class HomeworkBiz {
         mqMessage.setMessageBody(String.valueOf(homework.getId()));
         mqMessage.setBusinessKey("homework_" + homework.getId());
         mqMessageService.save(mqMessage);
-        asyncDuplicateCheck(homework.getId(), mqMessage.getId())
-                .exceptionally(throwable -> {
-                    logger.error("提交作业失败，homeworkId={}", homework.getId(), throwable);
-                    retryQueue.offer(new RetryTask(homework.getId(), mqMessage.getId()));
-                    return null;
-                });
+        asyncDuplicateCheck(homework.getId(), mqMessage.getId());
     }
 
     @Async("duplicateCheckThreadPool")
     public CompletableFuture<Void> asyncDuplicateCheck(Long homeworkId, Long messageId) {
-
-        return CompletableFuture.runAsync(()->{
+        return CompletableFuture.runAsync(() -> {
             String lockKey = "duplicate_check:" + messageId;
             String lockValue = UUID.randomUUID().toString();
-            try{
+
+            try {
                 // 获取分布式锁
-                boolean locked = RedisUtil.LockOps.getLock(lockKey, lockValue, 60, TimeUnit.SECONDS);
+                boolean locked = RedisUtil.LockOps.getLock(lockKey, lockValue, 600, TimeUnit.SECONDS);
                 if (!locked) {
                     logger.info("获取锁失败，任务可能正在被处理，messageId={}", messageId);
                     return;
                 }
 
-                // 检查消息状态
-                MqMessage message = mqMessageService.getById(messageId);
-                if (message == null || !message.getStatus().equals(CheckStatusEnum.WAITING.getCode())) {
-                    logger.info("消息状态已变更，不再处理，messageId={}", messageId);
-                    return;
-                }
+                // 使用编程式事务处理状态更新
+                transactionTemplate.execute(status -> {
+                    // 检查消息状态
+                    MqMessage message = mqMessageService.getById(messageId);
+                    if (message == null || !message.getStatus().equals(CheckStatusEnum.WAITING.getCode())) {
+                        logger.info("消息状态已变更，不再处理，messageId={}", messageId);
+                        return null;
+                    }
 
-                // 更新状态为处理中
-                message.setStatus(CheckStatusEnum.PROCESSING.getCode());
-                mqMessageService.updateById(message);
-
-                // 更新作业查重状态
-                updateHomeworkCheckStatus(homeworkId, CheckStatusEnum.PROCESSING);
+                    // 原子性更新两个状态
+                    message.setStatus(CheckStatusEnum.PROCESSING.getCode());
+                    mqMessageService.updateById(message);
+                    updateHomeworkCheckStatus(homeworkId, CheckStatusEnum.PROCESSING);
+                    return null;
+                });
 
                 // 执行查重
                 duplicateCheckService.getSimilarity(homeworkId);
 
-                // 更新状态为完成
-                message.setStatus(CheckStatusEnum.COMPLETED.getCode());
-                mqMessageService.updateById(message);
-                updateHomeworkCheckStatus(homeworkId, CheckStatusEnum.COMPLETED);
+                // 使用事务更新完成状态
+                transactionTemplate.execute(status -> {
+                    MqMessage message = mqMessageService.getById(messageId);
+                    message.setStatus(CheckStatusEnum.COMPLETED.getCode());
+                    mqMessageService.updateById(message);
+                    updateHomeworkCheckStatus(homeworkId, CheckStatusEnum.COMPLETED);
+                    return null;
+                });
 
                 logger.info("作业查重完成，homeworkId={}", homeworkId);
-            }catch (Exception e){
+
+            } catch (Exception e) {
                 logger.error("查重失败，homeworkId=" + homeworkId, e);
-                handleError(homeworkId, messageId, e);
-            }
-            finally {
+
+                retryQueue.offer(new RetryTask(homeworkId, messageId));
+                // 更新状态为等待重试
+                transactionTemplate.execute(status -> {
+                    MqMessage message = mqMessageService.getById(messageId);
+                    if (message != null) {
+                        message.setStatus(CheckStatusEnum.WAITING.getCode());
+                        message.setNextRetryTime(LocalDateTime.now().plusSeconds(5));
+                        mqMessageService.updateById(message);
+                        updateHomeworkCheckStatus(homeworkId, CheckStatusEnum.WAITING);
+                    }
+                    return null;
+                });
+//                // 错误处理也需要事务保护
+//                transactionTemplate.execute(status -> {
+//                    handleError(homeworkId, messageId, e);
+//                    return null;
+//                });
+            } finally {
                 RedisUtil.LockOps.releaseLock(lockKey, lockValue);
             }
         });
     }
 
 
-    private void handleError(Long homeworkId, Long messageId, Exception e) {
-        try {
-            MqMessage message = mqMessageService.getById(messageId);
-            if (message == null) {
-                return;
-            }
 
-            int retryCount = message.getRetryTimes() != null ? message.getRetryTimes() : 0;
-            if (retryCount >= 3) {
-                message.setStatus(CheckStatusEnum.FAILED.getCode());
-                message.setNextRetryTime(LocalDateTime.now().plusMinutes(3));
-                mqMessageService.updateById(message);
-                updateHomeworkCheckStatus(homeworkId, CheckStatusEnum.FAILED);
-                logger.error("查重失败超过最大重试次数，homeworkId={}", homeworkId);
-                return;
-            }
-
-            // 更新重试信息
-            message.setStatus(CheckStatusEnum.WAITING.getCode());
-            message.setRetryTimes(retryCount + 1);
-            message.setNextRetryTime(LocalDateTime.now().plusSeconds(10));
-            mqMessageService.updateById(message);
-            updateHomeworkCheckStatus(homeworkId, CheckStatusEnum.WAITING);
-
-            // 延迟重试
-            CompletableFuture.delayedExecutor(10, TimeUnit.SECONDS)
-                    .execute(() -> asyncDuplicateCheck(homeworkId, messageId));
-
-        } catch (Exception ex) {
-            logger.error("处理错误失败", ex);
-        }
-    }
+//    private void handleError(Long homeworkId, Long messageId, Exception e) {
+//        try {
+//            MqMessage message = mqMessageService.getById(messageId);
+//            if (message == null) {
+//                return;
+//            }
+//
+//            int retryCount = message.getRetryTimes() != null ? message.getRetryTimes() : 0;
+//            if (retryCount >= 3) {
+//                message.setStatus(CheckStatusEnum.FAILED.getCode());
+//                message.setNextRetryTime(LocalDateTime.now().plusMinutes(5));
+//                mqMessageService.updateById(message);
+//                updateHomeworkCheckStatus(homeworkId, CheckStatusEnum.FAILED);
+//                logger.error("查重失败超过最大重试次数，homeworkId={}", homeworkId);
+//                return;
+//            }
+//
+//            // 更新重试信息
+//            message.setStatus(CheckStatusEnum.WAITING.getCode());
+//            message.setRetryTimes(retryCount + 1);
+//            message.setNextRetryTime(LocalDateTime.now().plusMinutes(1));
+//            mqMessageService.updateById(message);
+//            updateHomeworkCheckStatus(homeworkId, CheckStatusEnum.WAITING);
+//
+//            // 延迟重试
+//            CompletableFuture.delayedExecutor(60, TimeUnit.SECONDS)
+//                    .execute(() -> asyncDuplicateCheck(homeworkId, messageId));
+//
+//        } catch (Exception ex) {
+//            logger.error("处理错误失败", ex);
+//        }
+//    }
 
     private void updateHomeworkCheckStatus(Long homeworkId, CheckStatusEnum status) {
         try {
-            Homework homework = homeworkService.getById(homeworkId);
-            if (homework != null) {
-                homework.setCheckStatus(status.getCode());
-                homeworkService.updateById(homework);
-            }
+            LambdaUpdateWrapper<Homework> updateWrapper = new LambdaUpdateWrapper<>();
+            updateWrapper.eq(Homework::getId, homeworkId)
+                    .set(Homework::getCheckStatus, status.getCode());
+            homeworkService.update(updateWrapper);
         } catch (Exception e) {
             logger.error("更新作业查重状态失败，homeworkId=" + homeworkId, e);
         }
@@ -534,7 +584,7 @@ public class HomeworkBiz {
                 // 缓存空值，防止缓存穿透
                 RedisUtil.StringOps.setEx(cacheKey,
                         EMPTY_CACHE,
-                        60,
+                        300,
                         TimeUnit.SECONDS);
             }
 

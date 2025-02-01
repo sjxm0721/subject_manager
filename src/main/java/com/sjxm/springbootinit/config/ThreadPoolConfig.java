@@ -22,9 +22,9 @@ public class ThreadPoolConfig {
         return new ThreadPoolExecutor(
                 Runtime.getRuntime().availableProcessors(),
                 Runtime.getRuntime().availableProcessors() * 2,
-                60L,
+                300L,
                 TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(1000),
+                new LinkedBlockingQueue<>(500),
                 new ThreadFactoryBuilder().setNamePrefix("duplicate-check-thread-").build(),
                 new ThreadPoolExecutor.CallerRunsPolicy()
         );

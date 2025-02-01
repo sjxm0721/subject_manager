@@ -10,6 +10,7 @@ import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream;
 import org.apache.commons.io.FilenameUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.util.StopWatch;
 
 import java.io.*;
 import java.net.URL;
@@ -37,6 +38,8 @@ public class CodeSimilarityUtil {
      */
     public static double calculateCodeSimilarity(String sourceUrls1, String sourceUrls2) {
         try {
+            StopWatch stopWatch = new StopWatch();
+            stopWatch.start();
             logger.info("开始计算代码相似度: sourceUrls1长度={}, sourceUrls2长度={}",
                     sourceUrls1 != null ? sourceUrls1.length() : 0,
                     sourceUrls2 != null ? sourceUrls2.length() : 0);
@@ -48,7 +51,6 @@ public class CodeSimilarityUtil {
 
             Map<String, String> files1 = extractCodeFiles(sourceUrls1);
             Map<String, String> files2 = extractCodeFiles(sourceUrls2);
-            logger.info("代码文件数量: files1={}, files2={}", files1.size(), files2.size());
 
             if (files1.isEmpty() || files2.isEmpty()) {
                 logger.warn("代码文件为空, 返回0");
@@ -61,22 +63,21 @@ public class CodeSimilarityUtil {
             for (String ext : CODE_EXTENSIONS) {
                 Map<String, String> typeFiles1 = filterByExtension(files1, ext);
                 Map<String, String> typeFiles2 = filterByExtension(files2, ext);
-                logger.info("文件类型[{}]数量: files1={}, files2={}",
-                        ext, typeFiles1.size(), typeFiles2.size());
+
 
                 if (!typeFiles1.isEmpty() && !typeFiles2.isEmpty()) {
                     double similarity = compareFileGroups(typeFiles1, typeFiles2);
                     int weight = Math.max(typeFiles1.size(), typeFiles2.size());
                     totalSimilarity += similarity * weight;
                     totalFiles += weight;
-                    logger.info("文件类型[{}]相似度: similarity={}, weight={}",
-                            ext, similarity, weight);
+
                 }
             }
 
             double finalSimilarity = totalFiles > 0 ? totalSimilarity / totalFiles : 0.0;
-            logger.info("代码相似度计算完成: similarity={}, 总文件数={}",
-                    finalSimilarity, totalFiles);
+            stopWatch.stop();
+            logger.info("代码相似度计算完成: similarity={}, 总文件数={}, 耗时={}ms",
+                    finalSimilarity, totalFiles,stopWatch.getTotalTimeMillis());
             return finalSimilarity;
         } catch (Exception e) {
             logger.error("计算代码相似度失败", e);

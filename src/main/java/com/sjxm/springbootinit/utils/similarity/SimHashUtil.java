@@ -18,6 +18,7 @@ import com.hankcs.hanlp.seg.common.Term;
 import cn.hutool.core.util.StrUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.util.StopWatch;
 
 import java.io.*;
 import java.math.BigInteger;
@@ -40,6 +41,8 @@ public class SimHashUtil {
      */
     public static double calculateGroupSimilarity(String ossUrls1, String ossUrls2, String fileType) throws Exception {
         try {
+            StopWatch stopWatch = new StopWatch();
+            stopWatch.start();
             logger.info("开始计算文档组相似度: ossUrls1长度={}, ossUrls2长度={}, fileType={}",
                     ossUrls1 != null ? ossUrls1.length() : 0,
                     ossUrls2 != null ? ossUrls2.length() : 0,
@@ -52,7 +55,6 @@ public class SimHashUtil {
 
             String[] urls1 = ossUrls1.split(",");
             String[] urls2 = ossUrls2.split(",");
-            logger.info("文档数量: urls1={}, urls2={}", urls1.length, urls2.length);
 
             double maxSimilarity = 0.0;
             int comparisonCount = 0;
@@ -72,19 +74,18 @@ public class SimHashUtil {
                     }
 
                     try {
-                        logger.info("开始比较文档: url1={}, url2={}", url1, url2);
                         double similarity = calculateSimilarity(url1, url2, fileType);
                         maxSimilarity = Math.max(maxSimilarity, similarity);
                         comparisonCount++;
-                        logger.info("文档比较结果: similarity={}", similarity);
                     } catch (Exception e) {
                         logger.error("计算单个文档对相似度失败: url1={}, url2={}", url1, url2, e);
                     }
                 }
             }
 
-            logger.info("文档组相似度计算完成: maxSimilarity={}, 比较次数={}",
-                    maxSimilarity, comparisonCount);
+            stopWatch.stop();
+            logger.info("文档组相似度计算完成: maxSimilarity={}, 比较次数={},耗时={}ms",
+                    maxSimilarity, comparisonCount, stopWatch.getTotalTimeMillis());
             return maxSimilarity;
         } catch (Exception e) {
             logger.error("计算文档组相似度失败", e);

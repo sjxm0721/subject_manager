@@ -2,6 +2,7 @@ package com.sjxm.springbootinit.utils.similarity;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.util.StopWatch;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -12,6 +13,8 @@ public class ConsineSimilarityUtil {
 
     public static double calculate(String text1, String text2) {
         try {
+            StopWatch stopWatch = new StopWatch();
+            stopWatch.start();
             logger.info("开始计算余弦相似度: text1长度={}, text2长度={}",
                     text1 != null ? text1.length() : 0,
                     text2 != null ? text2.length() : 0);
@@ -24,7 +27,6 @@ public class ConsineSimilarityUtil {
             Map<String, Integer> vector1 = getTermFrequencyMap(text1);
             Map<String, Integer> vector2 = getTermFrequencyMap(text2);
 
-            logger.info("向量1大小={}, 向量2大小={}", vector1.size(), vector2.size());
 
             double dotProduct = 0.0;
             for (String term : vector1.keySet()) {
@@ -48,7 +50,8 @@ public class ConsineSimilarityUtil {
             }
 
             double similarity = dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
-            logger.info("余弦相似度计算完成: similarity={}", similarity);
+            stopWatch.stop();
+            logger.info("余弦相似度计算完成: similarity={},耗时={}", similarity, stopWatch.getTotalTimeMillis());
             return similarity;
         } catch (Exception e) {
             logger.error("余弦相似度计算出错", e);
@@ -60,7 +63,6 @@ public class ConsineSimilarityUtil {
         try {
             Map<String, Integer> termFreqMap = new HashMap<>();
             String[] terms = text.split("\\s+");
-            logger.info("分词结果: terms数量={}", terms.length);
 
             for (String term : terms) {
                 termFreqMap.merge(term, 1, Integer::sum);
